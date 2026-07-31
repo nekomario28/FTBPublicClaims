@@ -1,5 +1,8 @@
 package io.github.nekomario28.ftbpublicclaims.publicclaim;
 
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import dev.ftb.mods.ftbteams.data.ServerTeam;
+import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -8,8 +11,6 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.datafix.DataFixTypes;
 import net.minecraft.world.level.saveddata.SavedData;
 
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -43,48 +44,39 @@ public final class PublicClaimSavedData extends SavedData {
     @Override
     public CompoundTag save(CompoundTag tag, HolderLookup.Provider registries) {
         ListTag projectTags = new ListTag();
-        projects.values().forEach(project -> projectTags.add(project.save()));
+        projects.values().stream().findFirst().ifPresent(project -> projectTags.add(project.save()));
         tag.put("projects", projectTags);
         return tag;
+    }
+
+    public PublicClaimProject getOrCreateGlobal(CommandSourceStack source) throws CommandSyntaxException {
+        PublicClaimProject existing = projects.values().stream().findFirst().orElse(null);
+        if (existing != null) {
+            FTBServerTeamBridge.find(existing.teamId()).ifPresent(FTBServerTeamBridge::applySharedProperties);
+            if (projects.size() > 1) {
+                projects.clear();
+                projects.put(existing.id(), existing);
+                setDirty();
+            }
+            return existing;
+        }
+
+        ServerTeam team = FTBServerTeamBridge.createShared(source);
+        PublicClaimProject project = PublicClaimProject.create(team.getId());
+        projects.put(project.id(), project);
+        setDirty();
+        return project;
+    }
+
+    public Optional<PublicClaimProject> global() {
+        return projects.values().stream().findFirst();
     }
 
     public Optional<PublicClaimProject> find(UUID id) {
         return Optional.ofNullable(projects.get(id));
     }
 
-    public Optional<PublicClaimProject> findByName(String name) {
-        return projects.values().stream().filter(project -> project.name().equalsIgnoreCase(name)).findFirst();
-    }
-
     public List<PublicClaimProject> manageableBy(UUID playerId) {
-        List<PublicClaimProject> result = new ArrayList<>();
-        for (PublicClaimProject project : projects.values()) {
-            if (project.canManage(playerId)) {
-                result.add(project);
-            }
-        }
-        result.sort(Comparator.comparing(PublicClaimProject::name, String.CASE_INSENSITIVE_ORDER));
-        return result;
-    }
-
-    public long countOwnedBy(UUID playerId) {
-        return projects.values().stream().filter(project -> project.isOwner(playerId)).count();
-    }
-
-    public void add(PublicClaimProject project) {
-        projects.put(project.id(), project);
-        setDirty();
-    }
-
-    public boolean remove(UUID id) {
-        if (projects.remove(id) != null) {
-            setDirty();
-            return true;
-        }
-        return false;
-    }
-
-    public void changed() {
-        setDirty();
+        return global().map(List::of).orElseGet(List::of);
     }
 }
