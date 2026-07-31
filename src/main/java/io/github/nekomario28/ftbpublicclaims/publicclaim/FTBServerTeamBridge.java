@@ -4,7 +4,11 @@ import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import dev.ftb.mods.ftbchunks.api.ChunkTeamData;
 import dev.ftb.mods.ftbchunks.api.FTBChunksAPI;
 import dev.ftb.mods.ftbchunks.api.FTBChunksProperties;
+import dev.ftb.mods.ftbchunks.data.ChunkTeamDataImpl;
 import dev.ftb.mods.ftbchunks.data.ClaimedChunkManagerImpl;
+import dev.ftb.mods.ftbteams.api.FTBTeamsAPI;
+import dev.ftb.mods.ftbteams.api.Team;
+import dev.ftb.mods.ftbteams.api.TeamManager;
 import dev.ftb.mods.ftbteams.api.TeamRank;
 import dev.ftb.mods.ftbteams.api.property.PrivacyMode;
 import dev.ftb.mods.ftbteams.api.property.TeamProperties;
@@ -18,18 +22,32 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Version-specific bridge for the FTB Teams 2001.3.1 server-team implementation.
- * FTB Teams exposes server teams to commands, but not through its public creation API.
+ * Version boundary for the FTB Teams 2101.1.9 and FTB Chunks 2101.1.20 APIs.
+ *
+ * <p>Server-team creation is public in FTB Teams 2101, so this bridge no longer
+ * reaches into private fields. Implementation casts remain limited to explicit
+ * save and client-sync operations that are not exposed by the public APIs.</p>
  */
 public final class FTBServerTeamBridge {
+    private static final String DESCRIPTION = "Managed public claim created by FTBPublicClaims";
+
     private FTBServerTeamBridge() {
     }
 
-    public static ServerTeam create(CommandSourceStack source, String projectName, UUID ownerId) throws CommandSyntaxException {
-        TeamManagerImpl manager = requireManager();
-        ServerTeam team = manager.createServer(source.withSuppressedOutput(), "Public: " + projectName).getRight();
+    public static ServerTeam create(CommandSourceStack source, String projectName, UUID ownerId)
+            throws CommandSyntaxException {
+        TeamManager manager = requireManager();
+        Team created = manager.createServerTeam(
+                source.withSuppressedOutput(),
+                "Public: " + projectName,
+                DESCRIPTION,
+                null
+        );
+        if (!(created instanceof ServerTeam team)) {
+            throw new IllegalStateException("FTB Teams returned a non-server team for a server-team request");
+        }
 
-        team.setProperty(TeamProperties.DESCRIPTION, "Managed public claim created by FTBPublicClaims");
+        team.setProperty(TeamProperties.DESCRIPTION, DESCRIPTION);
         team.setProperty(FTBChunksProperties.BLOCK_EDIT_MODE, PrivacyMode.ALLIES);
         team.setProperty(FTBChunksProperties.BLOCK_INTERACT_MODE, PrivacyMode.PUBLIC);
         team.setProperty(FTBChunksProperties.ENTITY_INTERACT_MODE, PrivacyMode.PUBLIC);
@@ -44,17 +62,18 @@ public final class FTBServerTeamBridge {
 
         team.addMember(ownerId, TeamRank.OWNER);
         team.markDirty();
-        manager.syncToAll(team);
+        syncTeam(team);
         FTBChunksAPI.api().getManager().getOrCreateData(team);
         return team;
     }
 
     public static Optional<ServerTeam> find(UUID teamId) {
-        TeamManagerImpl manager = TeamManagerImpl.INSTANCE;
-        if (manager == null) {
+        if (!FTBTeamsAPI.api().isManagerLoaded()) {
             return Optional.empty();
         }
-        return manager.getTeamByID(teamId).filter(ServerTeam.class::isInstance).map(ServerTeam.class::cast);
+        return FTBTeamsAPI.api().getManager().getTeamByID(teamId)
+                .filter(ServerTeam.class::isInstance)
+                .map(ServerTeam.class::cast);
     }
 
     public static void setManager(ServerTeam team, UUID playerId, boolean enabled) {
@@ -64,36 +83,53 @@ public final class FTBServerTeamBridge {
             team.removeMember(playerId);
         }
         team.markDirty();
-        requireManager().syncToAll(team);
+        syncTeam(team);
     }
 
     public static boolean addExtraClaimChunks(ServerTeam team, int amount, int maximum) {
-        var data = ClaimedChunkManagerImpl.getInstance().getOrCreateData(team);
+        ChunkTeamData data = FTBChunksAPI.api().getManager().getOrCreateData(team);
         long updated = (long) data.getExtraClaimChunks() + amount;
-        if (amount < 1 || updated > maximum) {
+        if (amount < 1 || updated > maximum || updated > Integer.MAX_VALUE) {
             return false;
         }
 
         data.setExtraClaimChunks((int) updated);
-        data.markDirty();
+        if (data instanceof ChunkTeamDataImpl implementation) {
+            implementation.markDirty();
+        } else {
+            throw new IllegalStateException("Unsupported FTB Chunks team-data implementation: " + data.getClass().getName());
+        }
         return true;
     }
 
     public static void delete(CommandSourceStack source, ServerTeam team) {
         ChunkTeamData chunkData = FTBChunksAPI.api().getManager().getOrCreateData(team);
-        new ArrayList<>(chunkData.getClaimedChunks()).forEach(chunk -> chunk.unclaim(source, true));
+        new ArrayList<>(chunkData.getClaimedChunks())
+                .forEach(chunk -> chunk.unclaim(source.withSuppressedOutput(), true));
 
         new ArrayList<>(team.getMembers()).forEach(team::removeMember);
+        team.markDirty();
 
-        ClaimedChunkManagerImpl.getInstance().deleteTeam(team);
+        ClaimedChunkManagerImpl manager = ClaimedChunkManagerImpl.getInstance();
+        if (manager != null) {
+            manager.deleteTeam(team);
+        }
         team.delete(source.withSuppressedOutput());
     }
 
-    private static TeamManagerImpl requireManager() {
-        TeamManagerImpl manager = TeamManagerImpl.INSTANCE;
-        if (manager == null) {
+    private static TeamManager requireManager() {
+        if (!FTBTeamsAPI.api().isManagerLoaded()) {
             throw new IllegalStateException("FTB Teams manager is not ready");
         }
-        return manager;
+        return FTBTeamsAPI.api().getManager();
+    }
+
+    private static void syncTeam(ServerTeam team) {
+        TeamManager manager = requireManager();
+        if (manager instanceof TeamManagerImpl implementation) {
+            implementation.syncToAll(team);
+        } else {
+            throw new IllegalStateException("Unsupported FTB Teams manager implementation: " + manager.getClass().getName());
+        }
     }
 }
