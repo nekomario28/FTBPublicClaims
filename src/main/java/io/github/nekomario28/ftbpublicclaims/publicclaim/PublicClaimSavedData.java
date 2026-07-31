@@ -1,9 +1,12 @@
 package io.github.nekomario28.ftbpublicclaims.publicclaim;
 
+import com.mojang.datafixers.util.Pair;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.util.datafix.DataFixTypes;
 import net.minecraft.world.level.saveddata.SavedData;
 
 import java.util.ArrayList;
@@ -16,18 +19,19 @@ import java.util.UUID;
 
 public final class PublicClaimSavedData extends SavedData {
     private static final String DATA_NAME = "ftbpublicclaims_public_claims";
+    private static final Factory<PublicClaimSavedData> FACTORY = new Factory<>(
+            PublicClaimSavedData::new,
+            PublicClaimSavedData::load,
+            DataFixTypes.SAVED_DATA_COMMAND_STORAGE
+    );
 
     private final Map<UUID, PublicClaimProject> projects = new LinkedHashMap<>();
 
     public static PublicClaimSavedData get(MinecraftServer server) {
-        return server.overworld().getDataStorage().computeIfAbsent(
-                PublicClaimSavedData::load,
-                PublicClaimSavedData::new,
-                DATA_NAME
-        );
+        return server.overworld().getDataStorage().computeIfAbsent(FACTORY, DATA_NAME);
     }
 
-    public static PublicClaimSavedData load(CompoundTag tag) {
+    public static PublicClaimSavedData load(CompoundTag tag, HolderLookup.Provider registries) {
         PublicClaimSavedData data = new PublicClaimSavedData();
         ListTag projectTags = tag.getList("projects", Tag.TAG_COMPOUND);
         for (int i = 0; i < projectTags.size(); i++) {
@@ -38,7 +42,7 @@ public final class PublicClaimSavedData extends SavedData {
     }
 
     @Override
-    public CompoundTag save(CompoundTag tag) {
+    public CompoundTag save(CompoundTag tag, HolderLookup.Provider registries) {
         ListTag projectTags = new ListTag();
         projects.values().forEach(project -> projectTags.add(project.save()));
         tag.put("projects", projectTags);
