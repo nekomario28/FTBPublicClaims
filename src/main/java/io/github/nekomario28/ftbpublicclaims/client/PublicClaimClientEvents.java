@@ -14,17 +14,17 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.ChunkPos;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.client.event.ScreenEvent;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.common.Mod;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.client.event.ScreenEvent;
 import org.lwjgl.glfw.GLFW;
 
 import java.lang.reflect.Field;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
-@Mod.EventBusSubscriber(modid = FTBPublicClaims.MOD_ID, value = Dist.CLIENT)
+@EventBusSubscriber(modid = FTBPublicClaims.MOD_ID, value = Dist.CLIENT)
 public final class PublicClaimClientEvents {
     private static final Field SELECTED_CHUNKS = findSelectedChunksField();
 
@@ -75,7 +75,7 @@ public final class PublicClaimClientEvents {
 
         Set<ChunkPos> positions = new LinkedHashSet<>();
         selectedChunks.forEach(pos -> positions.add(new ChunkPos(pos.x(), pos.z())));
-        ModNetwork.CHANNEL.sendToServer(new PublicChunkChangePacket(
+        ModNetwork.sendChunkChange(new PublicChunkChangePacket(
                 selectedProject.get().id(),
                 event.getButton() == GLFW.GLFW_MOUSE_BUTTON_LEFT,
                 positions
@@ -103,7 +103,7 @@ public final class PublicClaimClientEvents {
             field.setAccessible(true);
             return field;
         } catch (ReflectiveOperationException exception) {
-            FTBPublicClaims.LOGGER.error("FTB Chunks 2001.3.6 map integration is unavailable", exception);
+            FTBPublicClaims.LOGGER.error("FTB Chunks 2101 map integration is unavailable", exception);
             return null;
         }
     }
