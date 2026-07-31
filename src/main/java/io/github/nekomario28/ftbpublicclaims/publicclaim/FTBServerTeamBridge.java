@@ -60,8 +60,22 @@ public final class FTBServerTeamBridge {
         team.setProperty(FTBChunksProperties.ALLOW_ALL_FAKE_PLAYERS, false);
         team.setProperty(FTBChunksProperties.ALLOW_NAMED_FAKE_PLAYERS, List.of());
         team.setProperty(FTBChunksProperties.ALLOW_FAKE_PLAYERS_BY_ID, false);
-        team.markDirty();
-        syncTeam(team);
+        saveAndSync(team);
+    }
+
+    public static void setPvp(ServerTeam team, boolean enabled) {
+        team.setProperty(FTBChunksProperties.ALLOW_PVP, enabled);
+        saveAndSync(team);
+    }
+
+    public static void setExplosions(ServerTeam team, boolean enabled) {
+        team.setProperty(FTBChunksProperties.ALLOW_EXPLOSIONS, enabled);
+        saveAndSync(team);
+    }
+
+    public static void setMobGriefing(ServerTeam team, boolean enabled) {
+        team.setProperty(FTBChunksProperties.ALLOW_MOB_GRIEFING, enabled);
+        saveAndSync(team);
     }
 
     public static boolean addExtraClaimChunks(ServerTeam team, int amount, int maximum) {
@@ -78,19 +92,20 @@ public final class FTBServerTeamBridge {
         throw new IllegalStateException("Unsupported FTB Chunks team-data implementation: " + data.getClass().getName());
     }
 
-    private static TeamManager requireManager() {
-        if (!FTBTeamsAPI.api().isManagerLoaded()) {
-            throw new IllegalStateException("FTB Teams manager is not ready");
-        }
-        return FTBTeamsAPI.api().getManager();
-    }
-
-    private static void syncTeam(ServerTeam team) {
+    private static void saveAndSync(ServerTeam team) {
+        team.markDirty();
         TeamManager manager = requireManager();
         if (manager instanceof TeamManagerImpl implementation) {
             implementation.syncToAll(team);
             return;
         }
         throw new IllegalStateException("Unsupported FTB Teams manager implementation: " + manager.getClass().getName());
+    }
+
+    private static TeamManager requireManager() {
+        if (!FTBTeamsAPI.api().isManagerLoaded()) {
+            throw new IllegalStateException("FTB Teams manager is not ready");
+        }
+        return FTBTeamsAPI.api().getManager();
     }
 }
