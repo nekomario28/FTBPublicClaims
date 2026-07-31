@@ -23,7 +23,7 @@ public class FTBPublicClaims {
     public FTBPublicClaims(IEventBus modBus, ModContainer modContainer) {
         NeoForge.EVENT_BUS.register(this);
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
-        ModNetwork.register(modBus);
+        modBus.addListener(ModNetwork::registerPayloads);
     }
 
     @SubscribeEvent
