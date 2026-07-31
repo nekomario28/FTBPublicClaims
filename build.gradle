@@ -52,6 +52,11 @@ dependencies {
     implementation "dev.ftb.mods:ftb-teams-neoforge:${ftb_teams_version}"
     implementation "dev.ftb.mods:ftb-chunks-neoforge:${ftb_chunks_version}"
 
+    def buyClaimChunksJar = file('libs/buyclaimchunks-continued-neoforge-1.21.1-1.1.1.jar')
+    if (buyClaimChunksJar.exists()) {
+        runtimeOnly files(buyClaimChunksJar)
+    }
+
     testImplementation platform('org.junit:junit-bom:5.14.2')
     testImplementation 'org.junit.jupiter:junit-jupiter'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
