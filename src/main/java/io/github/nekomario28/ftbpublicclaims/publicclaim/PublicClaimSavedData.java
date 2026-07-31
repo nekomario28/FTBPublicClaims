@@ -1,6 +1,5 @@
 package io.github.nekomario28.ftbpublicclaims.publicclaim;
 
-import com.mojang.datafixers.util.Pair;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
