@@ -19,6 +19,7 @@ import java.util.UUID;
 
 public final class PublicClaimSavedData extends SavedData {
     private static final String DATA_NAME = "ftbpublicclaims_public_claims";
+    private static final int CURRENT_SCHEMA = 2;
     private static final Factory<PublicClaimSavedData> FACTORY = new Factory<>(
             PublicClaimSavedData::new,
             PublicClaimSavedData::load,
@@ -26,6 +27,7 @@ public final class PublicClaimSavedData extends SavedData {
     );
 
     private final Map<UUID, PublicClaimProject> projects = new LinkedHashMap<>();
+    private int schemaVersion;
 
     public static PublicClaimSavedData get(MinecraftServer server) {
         return server.overworld().getDataStorage().computeIfAbsent(FACTORY, DATA_NAME);
@@ -33,6 +35,7 @@ public final class PublicClaimSavedData extends SavedData {
 
     public static PublicClaimSavedData load(CompoundTag tag, HolderLookup.Provider registries) {
         PublicClaimSavedData data = new PublicClaimSavedData();
+        data.schemaVersion = tag.getInt("schemaVersion");
         ListTag projectTags = tag.getList("projects", Tag.TAG_COMPOUND);
         for (int i = 0; i < projectTags.size(); i++) {
             PublicClaimProject project = PublicClaimProject.load(projectTags.getCompound(i));
@@ -43,6 +46,7 @@ public final class PublicClaimSavedData extends SavedData {
 
     @Override
     public CompoundTag save(CompoundTag tag, HolderLookup.Provider registries) {
+        tag.putInt("schemaVersion", schemaVersion);
         ListTag projectTags = new ListTag();
         projects.values().stream().findFirst().ifPresent(project -> projectTags.add(project.save()));
         tag.put("projects", projectTags);
@@ -52,8 +56,9 @@ public final class PublicClaimSavedData extends SavedData {
     public PublicClaimProject getOrCreateGlobal(CommandSourceStack source) throws CommandSyntaxException {
         PublicClaimProject existing = projects.values().stream().findFirst().orElse(null);
         if (existing != null) {
-            FTBServerTeamBridge.find(existing.teamId()).ifPresent(FTBServerTeamBridge::applySharedProperties);
-            if (projects.size() > 1) {
+            if (schemaVersion < CURRENT_SCHEMA) {
+                FTBServerTeamBridge.find(existing.teamId()).ifPresent(FTBServerTeamBridge::applySharedProperties);
+                schemaVersion = CURRENT_SCHEMA;
                 projects.clear();
                 projects.put(existing.id(), existing);
                 setDirty();
@@ -64,6 +69,7 @@ public final class PublicClaimSavedData extends SavedData {
         ServerTeam team = FTBServerTeamBridge.createShared(source);
         PublicClaimProject project = PublicClaimProject.create(team.getId());
         projects.put(project.id(), project);
+        schemaVersion = CURRENT_SCHEMA;
         setDirty();
         return project;
     }
