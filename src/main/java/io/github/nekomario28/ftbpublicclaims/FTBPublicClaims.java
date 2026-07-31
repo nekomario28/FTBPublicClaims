@@ -3,6 +3,7 @@ package io.github.nekomario28.ftbpublicclaims;
 import com.mojang.logging.LogUtils;
 import io.github.nekomario28.ftbpublicclaims.network.ModNetwork;
 import io.github.nekomario28.ftbpublicclaims.publicclaim.PublicClaimCommand;
+import io.github.nekomario28.ftbpublicclaims.publicclaim.PublicClaimSavedData;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -21,8 +22,8 @@ public class FTBPublicClaims {
 
     public FTBPublicClaims(IEventBus modBus, ModContainer modContainer) {
         NeoForge.EVENT_BUS.register(this);
-        modBus.addListener(ModNetwork::registerPayloads);
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
+        ModNetwork.register(modBus);
     }
 
     @SubscribeEvent
@@ -33,7 +34,12 @@ public class FTBPublicClaims {
     @SubscribeEvent
     public void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
-            ModNetwork.sendProjects(player);
+            try {
+                PublicClaimSavedData.get(player.getServer()).getOrCreateGlobal(player.createCommandSourceStack());
+                ModNetwork.sendProjects(player);
+            } catch (Exception exception) {
+                LOGGER.error("Failed to initialize global public claims", exception);
+            }
         }
     }
 }
