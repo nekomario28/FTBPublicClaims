@@ -6,8 +6,6 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.fml.DistExecutor;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.util.UUID;
@@ -31,10 +29,7 @@ public record SelectProjectPacket(UUID projectId) implements CustomPacketPayload
     }
 
     public static void handle(SelectProjectPacket packet, IPayloadContext context) {
-        context.enqueueWork(() -> DistExecutor.unsafeRunWhenOn(
-                Dist.CLIENT,
-                () -> () -> ClientClaimContext.select(packet.projectId)
-        ));
+        context.enqueueWork(() -> ClientClaimContext.select(packet.projectId));
     }
 
     @Override
