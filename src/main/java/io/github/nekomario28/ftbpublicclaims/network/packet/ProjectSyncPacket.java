@@ -6,8 +6,6 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.fml.DistExecutor;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.util.ArrayList;
@@ -46,10 +44,7 @@ public record ProjectSyncPacket(List<ProjectSummary> projects) implements Custom
     }
 
     public static void handle(ProjectSyncPacket packet, IPayloadContext context) {
-        context.enqueueWork(() -> DistExecutor.unsafeRunWhenOn(
-                Dist.CLIENT,
-                () -> () -> ClientClaimContext.updateProjects(packet.projects)
-        ));
+        context.enqueueWork(() -> ClientClaimContext.updateProjects(packet.projects));
     }
 
     @Override
