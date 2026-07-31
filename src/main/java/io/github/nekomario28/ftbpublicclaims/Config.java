@@ -1,17 +1,17 @@
 package io.github.nekomario28.ftbpublicclaims;
 
-import net.minecraftforge.common.ForgeConfigSpec;
+import net.neoforged.neoforge.common.ModConfigSpec;
 
 public final class Config {
 
-    private static final ForgeConfigSpec.Builder BUILDER = new ForgeConfigSpec.Builder();
-    public static final ForgeConfigSpec SPEC;
+    private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
+    public static final ModConfigSpec SPEC;
 
-    public static final ForgeConfigSpec.BooleanValue PUBLIC_CLAIMS_ENABLED;
-    public static final ForgeConfigSpec.IntValue MAX_PUBLIC_PROJECTS_PER_PLAYER;
-    public static final ForgeConfigSpec.IntValue MAX_PUBLIC_CHUNKS_PER_PROJECT;
-    public static final ForgeConfigSpec.IntValue MAX_PUBLIC_CLAIM_DISTANCE;
-    public static final ForgeConfigSpec.BooleanValue REQUIRE_PUBLIC_CLAIM_ADJACENCY;
+    public static final ModConfigSpec.BooleanValue PUBLIC_CLAIMS_ENABLED;
+    public static final ModConfigSpec.IntValue MAX_PUBLIC_PROJECTS_PER_PLAYER;
+    public static final ModConfigSpec.IntValue MAX_PUBLIC_CHUNKS_PER_PROJECT;
+    public static final ModConfigSpec.IntValue MAX_PUBLIC_CLAIM_DISTANCE;
+    public static final ModConfigSpec.BooleanValue REQUIRE_PUBLIC_CLAIM_ADJACENCY;
 
     static {
         BUILDER.comment("FTB Public Claims configuration").push("publicClaims");
