@@ -1,35 +1,23 @@
 package io.github.nekomario28.ftbpublicclaims.network;
 
-import io.github.nekomario28.ftbpublicclaims.FTBPublicClaims;
 import io.github.nekomario28.ftbpublicclaims.network.packet.ProjectSyncPacket;
 import io.github.nekomario28.ftbpublicclaims.network.packet.PublicChunkChangePacket;
 import io.github.nekomario28.ftbpublicclaims.network.packet.SelectProjectPacket;
 import io.github.nekomario28.ftbpublicclaims.publicclaim.PublicClaimProject;
 import io.github.nekomario28.ftbpublicclaims.publicclaim.PublicClaimSavedData;
 import net.minecraft.server.level.ServerPlayer;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
 import java.util.List;
 
-@EventBusSubscriber(modid = FTBPublicClaims.MOD_ID, bus = EventBusSubscriber.Bus.MOD)
 public final class ModNetwork {
     private static final String PROTOCOL_VERSION = "1";
 
     private ModNetwork() {
     }
 
-    /**
-     * Kept as an explicit entrypoint for callers from the legacy port. Payload
-     * registration itself is driven by the NeoForge mod-bus event below.
-     */
-    public static void register() {
-    }
-
-    @SubscribeEvent
     public static void registerPayloads(RegisterPayloadHandlersEvent event) {
         PayloadRegistrar registrar = event.registrar(PROTOCOL_VERSION);
         registrar.playToServer(
