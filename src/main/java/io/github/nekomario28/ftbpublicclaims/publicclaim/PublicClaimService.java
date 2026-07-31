@@ -71,6 +71,10 @@ public final class PublicClaimService {
         Set<ChunkPos> pending = new LinkedHashSet<>(positions);
         Map<String, Integer> problems = new HashMap<>();
         int changed = 0;
+
+        // FTB Chunks 2101 deliberately exempts server teams from its normal
+        // claim-power limit. Public projects therefore enforce their own cap
+        // before calling the public ChunkTeamData claim API.
         long maxChunks = (long) Config.getMaxPublicChunksPerProject() + teamData.getExtraClaimChunks();
         int existing = teamData.getClaimedChunks().size();
 
@@ -123,7 +127,7 @@ public final class PublicClaimService {
                 addProblem(problems, "not_project_claim");
                 continue;
             }
-            ClaimResult result = teamData.unclaim(player.createCommandSourceStack(), dimPos, false);
+            ClaimResult result = teamData.unclaim(player.createCommandSourceStack(), dimPos, false, false);
             if (result.isSuccess()) {
                 changed++;
             } else {
