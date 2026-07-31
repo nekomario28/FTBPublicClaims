@@ -17,7 +17,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - name: Check out repository
@@ -35,8 +35,25 @@ jobs:
           cache-provider: basic
           validate-wrappers: true
 
+      - name: Download BuyClaimChunks Continued
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p libs
+          gh release download v1.1.1 \
+            --repo nekomario28/BuyClaimChunks \
+            --pattern 'buyclaimchunks-continued-neoforge-1.21.1-1.1.1.jar' \
+            --dir libs
+
       - name: Compile and build
         run: ./gradlew clean test build --no-daemon --stacktrace
+
+      - name: Run combined NeoForge GameTests
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew runGameTestServer --no-daemon --console=plain 2>&1 | tee gametest.log
+          grep -Eq 'All [0-9]+ required tests passed' gametest.log
 
       - name: Upload diagnostics
         if: always()
@@ -46,5 +63,8 @@ jobs:
           path: |
             build/libs/*.jar
             build/reports/tests/test/
+            gametest.log
+            run/logs/latest.log
+            run/crash-reports/
           if-no-files-found: warn
           retention-days: 14
