@@ -4,6 +4,7 @@ import com.mojang.logging.LogUtils;
 import io.github.nekomario28.ftbpublicclaims.network.ModNetwork;
 import io.github.nekomario28.ftbpublicclaims.publicclaim.PublicClaimCommand;
 import net.minecraft.server.level.ServerPlayer;
+import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
@@ -18,10 +19,10 @@ public class FTBPublicClaims {
     public static final String MOD_ID = "ftbpublicclaims";
     public static final Logger LOGGER = LogUtils.getLogger();
 
-    public FTBPublicClaims(ModContainer modContainer) {
+    public FTBPublicClaims(IEventBus modBus, ModContainer modContainer) {
         NeoForge.EVENT_BUS.register(this);
+        modBus.addListener(ModNetwork::registerPayloads);
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
-        ModNetwork.register();
     }
 
     @SubscribeEvent
