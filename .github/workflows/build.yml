@@ -48,6 +48,17 @@ jobs:
       - name: Compile and build
         run: ./gradlew clean test build --no-daemon --stacktrace
 
+      - name: Verify FTB Chunks client map ABI
+        shell: bash
+        run: |
+          set -euo pipefail
+          jar_path=$(find ~/.gradle/caches -type f -name '*ftb-chunks-neoforge*2101.1.20*.jar' \
+            ! -name '*sources*' ! -name '*javadoc*' | head -1)
+          test -n "$jar_path"
+          javap -classpath "$jar_path" -private \
+            dev.ftb.mods.ftbchunks.client.gui.ChunkScreen | tee ftbchunks-chunkscreen-abi.txt
+          grep -Eq 'selectedChunks' ftbchunks-chunkscreen-abi.txt
+
       - name: Run combined NeoForge GameTests
         shell: bash
         run: |
@@ -151,6 +162,7 @@ jobs:
           path: |
             build/libs/*.jar
             build/reports/tests/test/
+            ftbchunks-chunkscreen-abi.txt
             gametest.log
             server-persistence-first.log
             server-persistence-second.log
