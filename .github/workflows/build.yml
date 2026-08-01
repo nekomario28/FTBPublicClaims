@@ -55,7 +55,7 @@ jobs:
           ./gradlew runGameTestServer --no-daemon --console=plain 2>&1 | tee gametest.log
           grep -Eq 'All [0-9]+ required tests passed' gametest.log
 
-      - name: Smoke test combined dedicated server
+      - name: Verify combined dedicated-server persistence
         shell: bash
         run: |
           set -euo pipefail
@@ -63,32 +63,91 @@ jobs:
           mkdir -p run
           printf 'eula=true\n' > run/eula.txt
 
-          setsid ./gradlew runServer --no-daemon --console=plain > server-smoke.log 2>&1 &
-          server_pid=$!
+          server_pid=''
+          server_fifo=''
           cleanup() {
-            kill -TERM -- "-$server_pid" 2>/dev/null || true
-            wait "$server_pid" 2>/dev/null || true
+            if [[ -n "$server_pid" ]]; then
+              kill -TERM -- "-$server_pid" 2>/dev/null || true
+              wait "$server_pid" 2>/dev/null || true
+            fi
+            [[ -n "$server_fifo" ]] && rm -f "$server_fifo"
           }
           trap cleanup EXIT
 
-          for _ in {1..120}; do
-            if grep -Eq 'Done \([0-9.]+s\)!' server-smoke.log; then
-              grep -Fq 'BuyClaimChunks Continued' server-smoke.log
-              grep -Fq 'FTB Public Claims' server-smoke.log
-              echo 'Combined dedicated server reached Done with both mods loaded.'
-              exit 0
-            fi
-            if ! kill -0 "$server_pid" 2>/dev/null; then
-              cat server-smoke.log
-              echo 'Dedicated server exited before reaching Done.' >&2
-              exit 1
-            fi
-            sleep 2
-          done
+          start_server() {
+            local log_file=$1
+            local fifo_file=$2
+            server_fifo=$fifo_file
+            rm -f "$fifo_file"
+            mkfifo "$fifo_file"
+            setsid bash -c "./gradlew runServer --no-daemon --console=plain < '$fifo_file'" > "$log_file" 2>&1 &
+            server_pid=$!
+            exec 3>"$fifo_file"
 
-          cat server-smoke.log
-          echo 'Dedicated server did not reach Done before timeout.' >&2
-          exit 1
+            for _ in {1..120}; do
+              if grep -Eq 'Done \([0-9.]+s\)!' "$log_file"; then
+                grep -Fq 'BuyClaimChunks Continued' "$log_file"
+                grep -Fq 'FTB Public Claims' "$log_file"
+                return 0
+              fi
+              if ! kill -0 "$server_pid" 2>/dev/null; then
+                cat "$log_file"
+                echo 'Dedicated server exited before reaching Done.' >&2
+                exit 1
+              fi
+              sleep 2
+            done
+
+            cat "$log_file"
+            echo 'Dedicated server did not reach Done before timeout.' >&2
+            exit 1
+          }
+
+          wait_for_status() {
+            local log_file=$1
+            for _ in {1..30}; do
+              grep -Fq 'FTBPublicClaims status team=' "$log_file" && return 0
+              sleep 1
+            done
+            cat "$log_file"
+            echo 'Public status command did not produce output.' >&2
+            exit 1
+          }
+
+          stop_server() {
+            printf 'save-all flush\nstop\n' >&3
+            exec 3>&-
+            wait "$server_pid"
+            server_pid=''
+            rm -f "$server_fifo"
+            server_fifo=''
+          }
+
+          start_server server-persistence-first.log server-first.stdin
+          printf '%s\n' \
+            'publicclaim settings pvp false' \
+            'publicclaim settings explosions true' \
+            'publicclaim settings mob_griefing true' \
+            'publicclaim internal add_extra 7 100' \
+            'publicclaim status' >&3
+          wait_for_status server-persistence-first.log
+          stop_server
+
+          first_status=$(grep -F 'FTBPublicClaims status team=' server-persistence-first.log \
+            | tail -1 | sed 's/^.*FTBPublicClaims status/FTBPublicClaims status/')
+          printf '%s\n' "$first_status" | grep -Fq \
+            'pvp=false explosions=true mob_griefing=true extra=7 claims=0'
+
+          start_server server-persistence-second.log server-second.stdin
+          printf 'publicclaim status\n' >&3
+          wait_for_status server-persistence-second.log
+          stop_server
+
+          second_status=$(grep -F 'FTBPublicClaims status team=' server-persistence-second.log \
+            | tail -1 | sed 's/^.*FTBPublicClaims status/FTBPublicClaims status/')
+
+          test "$first_status" = "$second_status"
+          echo "Persisted public state: $second_status"
 
       - name: Upload diagnostics
         if: always()
@@ -99,7 +158,8 @@ jobs:
             build/libs/*.jar
             build/reports/tests/test/
             gametest.log
-            server-smoke.log
+            server-persistence-first.log
+            server-persistence-second.log
             run/logs/latest.log
             run/crash-reports/
           if-no-files-found: warn
