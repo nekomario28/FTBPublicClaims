@@ -61,34 +61,47 @@ jobs:
           set -euo pipefail
           rm -rf run
           mkdir -p run
-          printf 'eula=true\n' > run/eula.txt
+          cat > run/eula.txt <<'EOF'
+          eula=true
+          EOF
+          cat > run/server.properties <<'EOF'
+          enable-rcon=true
+          rcon.password=ftbpublicclaims-ci
+          rcon.port=25575
+          online-mode=false
+          server-port=25565
+          EOF
 
           server_pid=''
-          server_fifo=''
           cleanup() {
             if [[ -n "$server_pid" ]]; then
               kill -TERM -- "-$server_pid" 2>/dev/null || true
               wait "$server_pid" 2>/dev/null || true
             fi
-            [[ -n "$server_fifo" ]] && rm -f "$server_fifo"
           }
           trap cleanup EXIT
 
+          rcon() {
+            python3 .github/scripts/minecraft_rcon.py \
+              127.0.0.1 25575 ftbpublicclaims-ci "$@"
+          }
+
           start_server() {
             local log_file=$1
-            local fifo_file=$2
-            server_fifo=$fifo_file
-            rm -f "$fifo_file"
-            mkfifo "$fifo_file"
-            setsid bash -c "./gradlew runServer --no-daemon --console=plain < '$fifo_file'" > "$log_file" 2>&1 &
+            setsid ./gradlew runServer --no-daemon --console=plain > "$log_file" 2>&1 &
             server_pid=$!
-            exec 3>"$fifo_file"
 
             for _ in {1..120}; do
               if grep -Eq 'Done \([0-9.]+s\)!' "$log_file"; then
                 grep -Fq 'BuyClaimChunks Continued' "$log_file"
                 grep -Fq 'FTB Public Claims' "$log_file"
-                return 0
+                for _ in {1..30}; do
+                  rcon list >/dev/null 2>&1 && return 0
+                  sleep 1
+                done
+                cat "$log_file"
+                echo 'RCON did not become ready.' >&2
+                exit 1
               fi
               if ! kill -0 "$server_pid" 2>/dev/null; then
                 cat "$log_file"
@@ -103,48 +116,26 @@ jobs:
             exit 1
           }
 
-          wait_for_status() {
-            local log_file=$1
-            for _ in {1..30}; do
-              grep -Fq 'FTBPublicClaims status team=' "$log_file" && return 0
-              sleep 1
-            done
-            cat "$log_file"
-            echo 'Public status command did not produce output.' >&2
-            exit 1
-          }
-
           stop_server() {
-            printf 'save-all flush\nstop\n' >&3
-            exec 3>&-
+            rcon 'save-all flush' >/dev/null
+            rcon stop >/dev/null || true
             wait "$server_pid"
             server_pid=''
-            rm -f "$server_fifo"
-            server_fifo=''
           }
 
-          start_server server-persistence-first.log server-first.stdin
-          printf '%s\n' \
-            'publicclaim settings pvp false' \
-            'publicclaim settings explosions true' \
-            'publicclaim settings mob_griefing true' \
-            'publicclaim internal add_extra 7 100' \
-            'publicclaim status' >&3
-          wait_for_status server-persistence-first.log
-          stop_server
-
-          first_status=$(grep -F 'FTBPublicClaims status team=' server-persistence-first.log \
-            | tail -1 | sed 's/^.*FTBPublicClaims status/FTBPublicClaims status/')
+          start_server server-persistence-first.log
+          rcon 'publicclaim settings pvp false' >/dev/null
+          rcon 'publicclaim settings explosions true' >/dev/null
+          rcon 'publicclaim settings mob_griefing true' >/dev/null
+          rcon 'publicclaim internal add_extra 7 100' >/dev/null
+          first_status=$(rcon 'publicclaim status')
           printf '%s\n' "$first_status" | grep -Fq \
             'pvp=false explosions=true mob_griefing=true extra=7 claims=0'
-
-          start_server server-persistence-second.log server-second.stdin
-          printf 'publicclaim status\n' >&3
-          wait_for_status server-persistence-second.log
           stop_server
 
-          second_status=$(grep -F 'FTBPublicClaims status team=' server-persistence-second.log \
-            | tail -1 | sed 's/^.*FTBPublicClaims status/FTBPublicClaims status/')
+          start_server server-persistence-second.log
+          second_status=$(rcon 'publicclaim status')
+          stop_server
 
           test "$first_status" = "$second_status"
           echo "Persisted public state: $second_status"
