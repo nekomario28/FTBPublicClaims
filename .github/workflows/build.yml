@@ -101,9 +101,7 @@ jobs:
           done
           grep -Eq 'Done \([0-9.]+s\)!' ui-server.log
 
-          setsid env JAVA_TOOL_OPTIONS='-Dftbpublicclaims.uiProbe=true' \
-            ./gradlew runClient --no-daemon --console=plain \
-            --args='--quickPlayMultiplayer 127.0.0.1:25565 --width 1280 --height 720' \
+          setsid ./gradlew runClient -PuiProbe=true --no-daemon --console=plain \
             > client-ui.log 2>&1 &
           client_pid=$!
 
