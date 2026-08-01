@@ -162,8 +162,8 @@ public final class PublicCompatibilityGameTests {
         final ServerPlayer claimer;
         final ServerPlayer visitor;
         try {
-            claimer = makeConnectedPlayer(helper, "public-owner-test");
-            visitor = makeConnectedPlayer(helper, "public-visitor-test");
+            claimer = makeConnectedPlayer(helper, "pub-owner");
+            visitor = makeConnectedPlayer(helper, "pub-visitor");
         } catch (Exception exception) {
             helper.fail("Failed to create connected players: " + exception.getMessage());
             return;
