@@ -1,26 +1,40 @@
 package io.github.nekomario28.ftbpublicclaims;
 
+import com.mojang.authlib.GameProfile;
 import dev.ftb.mods.ftbchunks.api.FTBChunksAPI;
 import io.github.nekomario28.ftbpublicclaims.publicclaim.FTBServerTeamBridge;
 import io.github.nekomario28.ftbpublicclaims.publicclaim.PublicClaimProject;
 import io.github.nekomario28.ftbpublicclaims.publicclaim.PublicClaimSavedData;
+import io.netty.channel.embedded.EmbeddedChannel;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.network.Connection;
+import net.minecraft.network.PacketSendListener;
+import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.PacketFlow;
+import net.minecraft.network.protocol.common.ClientboundKeepAlivePacket;
+import net.minecraft.network.protocol.common.ServerboundKeepAlivePacket;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.network.CommonListenerCookie;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.GameType;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
+import net.neoforged.neoforge.network.registration.NetworkRegistry;
+import org.jetbrains.annotations.Nullable;
 
-/**
- * Uses BuyClaimChunks' packaged empty structure so the combined test validates
- * the actual released JAR instead of duplicating a test-only structure here.
- */
+import java.util.UUID;
+
+/** Combined runtime contract with the released BuyClaimChunks Continued JAR. */
 @GameTestHolder("buyclaimchunks")
 @PrefixGameTestTemplate(false)
 public final class PublicCompatibilityGameTests {
     private PublicCompatibilityGameTests() {
     }
 
-    @GameTest(template = "empty", timeoutTicks = 200)
-    public static void buyClaimChunksAndPublicClaimsRemainSeparate(GameTestHelper helper) {
+    @GameTest(template = "empty", timeoutTicks = 300)
+    public static void realPersonalPurchaseDoesNotChangePublicCapacity(GameTestHelper helper) {
         var server = helper.getLevel().getServer();
         var dispatcher = server.getCommands().getDispatcher();
 
@@ -29,21 +43,104 @@ public final class PublicCompatibilityGameTests {
         helper.assertTrue(dispatcher.getRoot().getChild("publicclaim") != null,
                 "Expected FTBPublicClaims /publicclaim command to be registered");
 
+        final ServerPlayer player;
         try {
-            PublicClaimProject project = PublicClaimSavedData.get(server)
-                    .getOrCreateGlobal(server.createCommandSourceStack().withPermission(4));
-            var publicTeam = FTBServerTeamBridge.find(project.teamId()).orElse(null);
-            helper.assertTrue(publicTeam != null, "Expected the global public Server Team to exist");
-
-            var publicData = FTBChunksAPI.api().getManager().getOrCreateData(publicTeam);
-            helper.assertTrue(publicData.getTeam().getTeamId().equals(project.teamId()),
-                    "Public claims must use the dedicated global Server Team");
-            helper.assertTrue(!publicData.getTeam().isPlayerTeam(),
-                    "Public claim capacity must not use personal player data");
-            helper.succeed();
+            player = makeConnectedPlayer(helper);
         } catch (Exception exception) {
-            FTBPublicClaims.LOGGER.error("BuyClaimChunks compatibility GameTest failed", exception);
-            helper.fail("Compatibility GameTest failed: " + exception.getMessage());
+            FTBPublicClaims.LOGGER.error("Failed to create compatibility GameTest player", exception);
+            helper.fail("Failed to create connected player: " + exception.getMessage());
+            return;
         }
+
+        helper.runAfterDelay(5, () -> {
+            try {
+                PublicClaimProject project = PublicClaimSavedData.get(server)
+                        .getOrCreateGlobal(server.createCommandSourceStack().withPermission(4));
+                var publicTeam = FTBServerTeamBridge.find(project.teamId()).orElse(null);
+                helper.assertTrue(publicTeam != null, "Expected the global public Server Team to exist");
+
+                var publicData = FTBChunksAPI.api().getManager().getOrCreateData(publicTeam);
+                helper.assertTrue(publicData.getTeam().getTeamId().equals(project.teamId()),
+                        "Public claims must use the dedicated global Server Team");
+                helper.assertTrue(!publicData.getTeam().isPlayerTeam(),
+                        "Public claim capacity must not use personal player data");
+
+                int publicExtraBefore = publicData.getExtraClaimChunks();
+                int publicClaimsBefore = publicData.getClaimedChunks().size();
+
+                String playerName = player.getGameProfile().getName();
+                dispatcher.execute(
+                        "ftbchunks admin extra_claim_chunks " + playerName + " set 0",
+                        server.createCommandSourceStack().withPermission(4).withSuppressedOutput()
+                );
+
+                var personalData = FTBChunksAPI.api().getManager().getPersonalData(player.getUUID());
+                helper.assertTrue(personalData != null, "Expected personal FTB Chunks data after login");
+                helper.assertValueEqual(personalData.getExtraClaimChunks(), 0,
+                        "personal extra capacity before purchase");
+
+                player.getInventory().clearContent();
+                player.getInventory().setItem(0, new ItemStack(Items.DIAMOND, 4));
+
+                int result = dispatcher.execute("buyclaim", player.createCommandSourceStack());
+                helper.assertValueEqual(result, 1, "/buyclaim command result");
+                helper.assertValueEqual(personalData.getExtraClaimChunks(), 1,
+                        "personal extra capacity after purchase");
+                helper.assertTrue(player.getInventory().getItem(0).isEmpty(),
+                        "Expected the four-diamond payment to be consumed");
+
+                helper.assertValueEqual(publicData.getExtraClaimChunks(), publicExtraBefore,
+                        "public extra capacity after personal purchase");
+                helper.assertValueEqual(publicData.getClaimedChunks().size(), publicClaimsBefore,
+                        "public claimed chunks after personal purchase");
+                helper.succeed();
+            } catch (Exception exception) {
+                FTBPublicClaims.LOGGER.error("BuyClaimChunks compatibility GameTest failed", exception);
+                helper.fail("Compatibility GameTest failed: " + exception.getMessage());
+            }
+        });
+    }
+
+    private static ServerPlayer makeConnectedPlayer(GameTestHelper helper) {
+        CommonListenerCookie cookie = CommonListenerCookie.createInitial(
+                new GameProfile(UUID.randomUUID(), "public-buy-test"), false
+        );
+        ServerPlayer player = new ServerPlayer(
+                helper.getLevel().getServer(),
+                helper.getLevel(),
+                cookie.gameProfile(),
+                cookie.clientInformation()
+        );
+
+        Connection connection = new Connection(PacketFlow.SERVERBOUND) {
+            @Override
+            public void tick() {
+                super.tick();
+                player.resetLastActionTime();
+            }
+
+            @Override
+            public boolean isMemoryConnection() {
+                return true;
+            }
+
+            @Override
+            public void send(Packet<?> packet, @Nullable PacketSendListener listener, boolean flush) {
+                super.send(packet, listener, flush);
+                if (packet instanceof ClientboundKeepAlivePacket keepAlive) {
+                    player.connection.handleKeepAlive(new ServerboundKeepAlivePacket(keepAlive.getId()));
+                }
+            }
+        };
+
+        new EmbeddedChannel(connection);
+        NetworkRegistry.configureMockConnection(connection);
+        var server = helper.getLevel().getServer();
+        server.getPlayerList().placeNewPlayer(connection, player, cookie);
+        server.getConnection().getConnections().add(connection);
+        player.gameMode.changeGameModeForPlayer(GameType.SURVIVAL);
+        player.connection.chunkSender.sendNextChunks(player);
+        player.connection.chunkSender.onChunkBatchReceivedByClient(64.0F);
+        return player;
     }
 }
