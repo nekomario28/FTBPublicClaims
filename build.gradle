@@ -24,7 +24,18 @@ neoForge {
     version = project.neo_version
 
     runs {
-        client { client() }
+        client {
+            client()
+            if (providers.gradleProperty('uiProbe').isPresent()) {
+                systemProperty 'ftbpublicclaims.uiProbe', 'true'
+                programArgument '--quickPlayMultiplayer'
+                programArgument '127.0.0.1:25565'
+                programArgument '--width'
+                programArgument '1280'
+                programArgument '--height'
+                programArgument '720'
+            }
+        }
         server {
             server()
             programArgument '--nogui'
