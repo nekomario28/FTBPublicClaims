@@ -9,13 +9,17 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
-@GameTestHolder(FTBPublicClaims.MOD_ID)
+/**
+ * Uses BuyClaimChunks' packaged empty structure so the combined test validates
+ * the actual released JAR instead of duplicating a test-only structure here.
+ */
+@GameTestHolder("buyclaimchunks")
 @PrefixGameTestTemplate(false)
 public final class PublicCompatibilityGameTests {
     private PublicCompatibilityGameTests() {
     }
 
-    @GameTest(template = "buyclaimchunks:empty", timeoutTicks = 200)
+    @GameTest(template = "empty", timeoutTicks = 200)
     public static void buyClaimChunksAndPublicClaimsRemainSeparate(GameTestHelper helper) {
         var server = helper.getLevel().getServer();
         var dispatcher = server.getCommands().getDispatcher();
