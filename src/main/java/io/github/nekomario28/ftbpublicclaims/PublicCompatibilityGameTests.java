@@ -2,6 +2,7 @@ package io.github.nekomario28.ftbpublicclaims;
 
 import com.mojang.authlib.GameProfile;
 import dev.ftb.mods.ftbchunks.api.FTBChunksAPI;
+import dev.ftb.mods.ftblibrary.math.ChunkDimPos;
 import io.github.nekomario28.ftbpublicclaims.publicclaim.FTBServerTeamBridge;
 import io.github.nekomario28.ftbpublicclaims.publicclaim.PublicClaimProject;
 import io.github.nekomario28.ftbpublicclaims.publicclaim.PublicClaimSavedData;
@@ -18,6 +19,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.CommonListenerCookie;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.GameType;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
@@ -45,7 +47,7 @@ public final class PublicCompatibilityGameTests {
 
         final ServerPlayer player;
         try {
-            player = makeConnectedPlayer(helper);
+            player = makeConnectedPlayer(helper, "public-buy-test");
         } catch (Exception exception) {
             FTBPublicClaims.LOGGER.error("Failed to create compatibility GameTest player", exception);
             helper.fail("Failed to create connected player: " + exception.getMessage());
@@ -101,9 +103,61 @@ public final class PublicCompatibilityGameTests {
         });
     }
 
-    private static ServerPlayer makeConnectedPlayer(GameTestHelper helper) {
+    @GameTest(template = "empty", timeoutTicks = 300)
+    public static void differentPlayersCanClaimAndUnclaimTheSharedPublicChunk(GameTestHelper helper) {
+        var server = helper.getLevel().getServer();
+        final ServerPlayer first;
+        final ServerPlayer second;
+        try {
+            first = makeConnectedPlayer(helper, "public-claimer");
+            second = makeConnectedPlayer(helper, "public-unclaimer");
+        } catch (Exception exception) {
+            helper.fail("Failed to create connected players: " + exception.getMessage());
+            return;
+        }
+
+        helper.runAfterDelay(5, () -> {
+            try {
+                PublicClaimProject project = PublicClaimSavedData.get(server)
+                        .getOrCreateGlobal(server.createCommandSourceStack().withPermission(4));
+                var publicTeam = FTBServerTeamBridge.find(project.teamId()).orElseThrow();
+                var publicData = FTBChunksAPI.api().getManager().getOrCreateData(publicTeam);
+
+                ChunkPos chunk = new ChunkPos(helper.absolutePos(helper.getOrigin()));
+                ChunkDimPos dimensionChunk = new ChunkDimPos(helper.getLevel().dimension(), chunk);
+                var existing = FTBChunksAPI.api().getManager().getChunk(dimensionChunk);
+                if (existing != null) {
+                    existing.getTeamData().unclaim(
+                            server.createCommandSourceStack().withPermission(4), dimensionChunk, false, true
+                    );
+                }
+
+                var claimResult = publicData.claim(first.createCommandSourceStack(), dimensionChunk, false);
+                helper.assertTrue(claimResult.isSuccess(),
+                        "First normal player must be able to create the shared public claim: " + claimResult.getResultId());
+
+                var claimed = FTBChunksAPI.api().getManager().getChunk(dimensionChunk);
+                helper.assertTrue(claimed != null, "Expected the public chunk to be claimed");
+                helper.assertTrue(claimed.getTeamData().getTeam().getTeamId().equals(project.teamId()),
+                        "The claimed chunk must belong to the global public Server Team");
+
+                var unclaimResult = publicData.unclaim(second.createCommandSourceStack(), dimensionChunk, false, false);
+                helper.assertTrue(unclaimResult.isSuccess(),
+                        "A different normal player must be able to unclaim the shared public chunk: "
+                                + unclaimResult.getResultId());
+                helper.assertTrue(FTBChunksAPI.api().getManager().getChunk(dimensionChunk) == null,
+                        "Expected the shared public chunk to be unclaimed");
+                helper.succeed();
+            } catch (Exception exception) {
+                FTBPublicClaims.LOGGER.error("Cross-player public claim GameTest failed", exception);
+                helper.fail("Cross-player public claim GameTest failed: " + exception.getMessage());
+            }
+        });
+    }
+
+    private static ServerPlayer makeConnectedPlayer(GameTestHelper helper, String name) {
         CommonListenerCookie cookie = CommonListenerCookie.createInitial(
-                new GameProfile(UUID.randomUUID(), "public-buy-test"), false
+                new GameProfile(UUID.randomUUID(), name), false
         );
         ServerPlayer player = new ServerPlayer(
                 helper.getLevel().getServer(),
