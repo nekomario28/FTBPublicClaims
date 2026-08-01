@@ -6,6 +6,7 @@ import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import dev.ftb.mods.ftbchunks.api.FTBChunksAPI;
 import dev.ftb.mods.ftbchunks.api.FTBChunksProperties;
+import dev.ftb.mods.ftblibrary.math.ChunkDimPos;
 import dev.ftb.mods.ftbteams.data.ServerTeam;
 import io.github.nekomario28.ftbpublicclaims.Config;
 import io.github.nekomario28.ftbpublicclaims.network.ModNetwork;
@@ -14,6 +15,7 @@ import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.ChunkPos;
 
 public final class PublicClaimCommand {
     private PublicClaimCommand() {
@@ -41,6 +43,14 @@ public final class PublicClaimCommand {
                                                         context.getSource(),
                                                         IntegerArgumentType.getInteger(context, "amount"),
                                                         IntegerArgumentType.getInteger(context, "maximum")
+                                                )))))
+                        .then(Commands.literal("claim_chunk")
+                                .then(Commands.argument("x", IntegerArgumentType.integer())
+                                        .then(Commands.argument("z", IntegerArgumentType.integer())
+                                                .executes(context -> claimChunk(
+                                                        context.getSource(),
+                                                        IntegerArgumentType.getInteger(context, "x"),
+                                                        IntegerArgumentType.getInteger(context, "z")
                                                 )))))));
     }
 
@@ -109,6 +119,19 @@ public final class PublicClaimCommand {
             return 0;
         }
         return FTBServerTeamBridge.addExtraClaimChunks(getGlobalTeam(source), amount, maximum) ? 1 : 0;
+    }
+
+    private static int claimChunk(CommandSourceStack source, int x, int z) throws CommandSyntaxException {
+        ServerTeam team = getGlobalTeam(source);
+        var data = FTBChunksAPI.api().getManager().getOrCreateData(team);
+        ChunkDimPos pos = new ChunkDimPos(source.getLevel().dimension(), new ChunkPos(x, z));
+        var result = data.claim(source.withSuppressedOutput(), pos, false);
+        if (!result.isSuccess()) {
+            source.sendFailure(Component.literal("Public claim failed: " + result.getResultId()));
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal("Public chunk claimed: " + x + "," + z), false);
+        return 1;
     }
 
     private static PublicClaimProject getGlobal(CommandSourceStack source) throws CommandSyntaxException {
