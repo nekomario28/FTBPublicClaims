@@ -113,7 +113,6 @@ jobs:
             sleep 2
           done
           test -n "$window_id"
-          xdotool windowactivate --sync "$window_id"
 
           for _ in {1..120}; do
             grep -Eq 'Logged in|joined the game|Connecting to 127\.0\.0\.1' client-ui.log && break
