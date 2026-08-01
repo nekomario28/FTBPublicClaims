@@ -128,17 +128,20 @@ jobs:
           rcon 'publicclaim settings explosions true' >/dev/null
           rcon 'publicclaim settings mob_griefing true' >/dev/null
           rcon 'publicclaim internal add_extra 7 100' >/dev/null
+          rcon 'publicclaim internal claim_chunk 0 0' >/dev/null
           first_status=$(rcon 'publicclaim status')
           printf '%s\n' "$first_status" | grep -Fq \
-            'pvp=false explosions=true mob_griefing=true extra=7 claims=0'
+            'pvp=false explosions=true mob_griefing=true extra=7 claims=1'
           stop_server
 
           start_server server-persistence-second.log
           second_status=$(rcon 'publicclaim status')
+          printf '%s\n' "$second_status" | grep -Fq \
+            'pvp=false explosions=true mob_griefing=true extra=7 claims=1'
           stop_server
 
           test "$first_status" = "$second_status"
-          echo "Persisted public state: $second_status"
+          echo "Persisted public state and claimed chunk: $second_status"
 
       - name: Upload diagnostics
         if: always()
