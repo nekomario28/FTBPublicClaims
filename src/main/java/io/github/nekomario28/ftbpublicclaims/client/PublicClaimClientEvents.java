@@ -1,6 +1,7 @@
 package io.github.nekomario28.ftbpublicclaims.client;
 
 import dev.ftb.mods.ftbchunks.client.gui.ChunkScreen;
+import dev.ftb.mods.ftbchunks.client.gui.ChunkScreenPanel;
 import dev.ftb.mods.ftblibrary.icon.Icons;
 import dev.ftb.mods.ftblibrary.math.XZ;
 import dev.ftb.mods.ftblibrary.ui.Panel;
@@ -90,7 +91,7 @@ public final class PublicClaimClientEvents {
             return Set.of();
         }
         try {
-            return (Set<XZ>) SELECTED_CHUNKS.get(screen);
+            return (Set<XZ>) SELECTED_CHUNKS.get(screen.getChunkScreen());
         } catch (IllegalAccessException exception) {
             FTBPublicClaims.LOGGER.error("Could not read FTB Chunks map selection", exception);
             return Set.of();
@@ -99,7 +100,7 @@ public final class PublicClaimClientEvents {
 
     private static Field findSelectedChunksField() {
         try {
-            Field field = ChunkScreen.class.getDeclaredField("selectedChunks");
+            Field field = ChunkScreenPanel.class.getDeclaredField("selectedChunks");
             field.setAccessible(true);
             return field;
         } catch (ReflectiveOperationException exception) {
