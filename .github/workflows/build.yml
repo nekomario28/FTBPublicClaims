@@ -59,6 +59,33 @@ jobs:
             dev.ftb.mods.ftbchunks.client.gui.ChunkScreenPanel | tee ftbchunks-chunkscreen-abi.txt
           grep -Eq 'selectedChunks' ftbchunks-chunkscreen-abi.txt
 
+      - name: Smoke test NeoForge client startup
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf run-client
+          set +e
+          timeout --signal=TERM 180s xvfb-run -a \
+            ./gradlew runClient --no-daemon --console=plain > client-smoke.log 2>&1
+          exit_code=$?
+          set -e
+
+          if [[ "$exit_code" -ne 0 && "$exit_code" -ne 124 ]]; then
+            cat client-smoke.log
+            exit "$exit_code"
+          fi
+
+          grep -Fq 'FTB Public Claims' client-smoke.log
+          grep -Fq 'FTB Chunks' client-smoke.log
+          if grep -Fq 'FTB Chunks 2101 map integration is unavailable' client-smoke.log; then
+            cat client-smoke.log
+            exit 1
+          fi
+          if grep -Eq 'Crash report saved|Exception caught from mod|Failed to complete lifecycle event' client-smoke.log; then
+            cat client-smoke.log
+            exit 1
+          fi
+
       - name: Run combined NeoForge GameTests
         shell: bash
         run: |
@@ -163,10 +190,11 @@ jobs:
             build/libs/*.jar
             build/reports/tests/test/
             ftbchunks-chunkscreen-abi.txt
+            client-smoke.log
+            run/logs/latest.log
+            run/crash-reports/
             gametest.log
             server-persistence-first.log
             server-persistence-second.log
-            run/logs/latest.log
-            run/crash-reports/
           if-no-files-found: warn
           retention-days: 14
