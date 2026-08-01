@@ -31,7 +31,7 @@ neoForge {
         }
         gameTestServer {
             type = 'gameTestServer'
-            systemProperty 'neoforge.enabledGameTestNamespaces', mod_id
+            systemProperty 'neoforge.enabledGameTestNamespaces', "${mod_id},buyclaimchunks"
         }
         configureEach {
             systemProperty 'forge.logging.markers', 'REGISTRIES'
