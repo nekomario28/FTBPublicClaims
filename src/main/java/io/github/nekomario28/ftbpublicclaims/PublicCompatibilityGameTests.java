@@ -2,6 +2,8 @@ package io.github.nekomario28.ftbpublicclaims;
 
 import com.mojang.authlib.GameProfile;
 import dev.ftb.mods.ftbchunks.api.FTBChunksAPI;
+import dev.ftb.mods.ftbchunks.api.Protection;
+import dev.ftb.mods.ftbchunks.api.ProtectionPolicy;
 import dev.ftb.mods.ftblibrary.math.ChunkDimPos;
 import io.github.nekomario28.ftbpublicclaims.publicclaim.FTBServerTeamBridge;
 import io.github.nekomario28.ftbpublicclaims.publicclaim.PublicClaimProject;
@@ -18,10 +20,12 @@ import net.minecraft.network.protocol.common.ClientboundKeepAlivePacket;
 import net.minecraft.network.protocol.common.ServerboundKeepAlivePacket;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.CommonListenerCookie;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.GameType;
+import net.minecraft.world.level.block.Blocks;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 import net.neoforged.neoforge.network.registration.NetworkRegistry;
@@ -124,14 +128,10 @@ public final class PublicCompatibilityGameTests {
                 var publicTeam = FTBServerTeamBridge.find(project.teamId()).orElseThrow();
                 var publicData = FTBChunksAPI.api().getManager().getOrCreateData(publicTeam);
 
-                ChunkPos chunk = new ChunkPos(helper.absolutePos(BlockPos.ZERO));
+                BlockPos absolutePos = helper.absolutePos(BlockPos.ZERO);
+                ChunkPos chunk = new ChunkPos(absolutePos);
                 ChunkDimPos dimensionChunk = new ChunkDimPos(helper.getLevel().dimension(), chunk);
-                var existing = FTBChunksAPI.api().getManager().getChunk(dimensionChunk);
-                if (existing != null) {
-                    existing.getTeamData().unclaim(
-                            server.createCommandSourceStack().withPermission(4), dimensionChunk, false, true
-                    );
-                }
+                clearExistingClaim(server, dimensionChunk);
 
                 var claimResult = publicData.claim(first.createCommandSourceStack(), dimensionChunk, false);
                 helper.assertTrue(claimResult.isSuccess(),
@@ -154,6 +154,72 @@ public final class PublicCompatibilityGameTests {
                 helper.fail("Cross-player public claim GameTest failed: " + exception.getMessage());
             }
         });
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 300)
+    public static void nonMemberCanEditAndInteractInsidePublicClaim(GameTestHelper helper) {
+        var server = helper.getLevel().getServer();
+        final ServerPlayer claimer;
+        final ServerPlayer visitor;
+        try {
+            claimer = makeConnectedPlayer(helper, "public-owner-test");
+            visitor = makeConnectedPlayer(helper, "public-visitor-test");
+        } catch (Exception exception) {
+            helper.fail("Failed to create connected players: " + exception.getMessage());
+            return;
+        }
+
+        helper.runAfterDelay(5, () -> {
+            try {
+                PublicClaimProject project = PublicClaimSavedData.get(server)
+                        .getOrCreateGlobal(server.createCommandSourceStack().withPermission(4));
+                var publicTeam = FTBServerTeamBridge.find(project.teamId()).orElseThrow();
+                var publicData = FTBChunksAPI.api().getManager().getOrCreateData(publicTeam);
+
+                BlockPos absolutePos = helper.absolutePos(BlockPos.ZERO);
+                ChunkDimPos dimensionChunk = new ChunkDimPos(
+                        helper.getLevel().dimension(), new ChunkPos(absolutePos)
+                );
+                clearExistingClaim(server, dimensionChunk);
+
+                var claimResult = publicData.claim(claimer.createCommandSourceStack(), dimensionChunk, false);
+                helper.assertTrue(claimResult.isSuccess(),
+                        "Expected the public claim to be created: " + claimResult.getResultId());
+                var claimed = FTBChunksAPI.api().getManager().getChunk(dimensionChunk);
+                helper.assertTrue(claimed != null, "Expected claimed chunk data");
+                helper.assertTrue(!publicTeam.getMembers().contains(visitor.getUUID()),
+                        "Visitor must remain outside the Server Team membership list");
+
+                helper.getLevel().setBlockAndUpdate(absolutePos, Blocks.STONE.defaultBlockState());
+                ProtectionPolicy editPolicy = Protection.EDIT_BLOCK.getProtectionPolicy(
+                        visitor, absolutePos, InteractionHand.MAIN_HAND, claimed, null
+                );
+                helper.assertValueEqual(editPolicy, ProtectionPolicy.ALLOW,
+                        "public block edit protection policy");
+
+                helper.getLevel().setBlockAndUpdate(absolutePos, Blocks.CHEST.defaultBlockState());
+                ProtectionPolicy interactPolicy = Protection.INTERACT_BLOCK.getProtectionPolicy(
+                        visitor, absolutePos, InteractionHand.MAIN_HAND, claimed, null
+                );
+                helper.assertValueEqual(interactPolicy, ProtectionPolicy.ALLOW,
+                        "public container interaction protection policy");
+
+                publicData.unclaim(server.createCommandSourceStack().withPermission(4), dimensionChunk, false, true);
+                helper.succeed();
+            } catch (Exception exception) {
+                FTBPublicClaims.LOGGER.error("Public protection policy GameTest failed", exception);
+                helper.fail("Public protection policy GameTest failed: " + exception.getMessage());
+            }
+        });
+    }
+
+    private static void clearExistingClaim(net.minecraft.server.MinecraftServer server, ChunkDimPos dimensionChunk) {
+        var existing = FTBChunksAPI.api().getManager().getChunk(dimensionChunk);
+        if (existing != null) {
+            existing.getTeamData().unclaim(
+                    server.createCommandSourceStack().withPermission(4), dimensionChunk, false, true
+            );
+        }
     }
 
     private static ServerPlayer makeConnectedPlayer(GameTestHelper helper, String name) {
