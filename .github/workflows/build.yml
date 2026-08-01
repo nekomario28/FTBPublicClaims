@@ -55,6 +55,41 @@ jobs:
           ./gradlew runGameTestServer --no-daemon --console=plain 2>&1 | tee gametest.log
           grep -Eq 'All [0-9]+ required tests passed' gametest.log
 
+      - name: Smoke test combined dedicated server
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf run
+          mkdir -p run
+          printf 'eula=true\n' > run/eula.txt
+
+          setsid ./gradlew runServer --no-daemon --console=plain > server-smoke.log 2>&1 &
+          server_pid=$!
+          cleanup() {
+            kill -TERM -- "-$server_pid" 2>/dev/null || true
+            wait "$server_pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          for _ in {1..120}; do
+            if grep -Eq 'Done \([0-9.]+s\)!' server-smoke.log; then
+              grep -Fq 'BuyClaimChunks Continued' server-smoke.log
+              grep -Fq 'FTB Public Claims' server-smoke.log
+              echo 'Combined dedicated server reached Done with both mods loaded.'
+              exit 0
+            fi
+            if ! kill -0 "$server_pid" 2>/dev/null; then
+              cat server-smoke.log
+              echo 'Dedicated server exited before reaching Done.' >&2
+              exit 1
+            fi
+            sleep 2
+          done
+
+          cat server-smoke.log
+          echo 'Dedicated server did not reach Done before timeout.' >&2
+          exit 1
+
       - name: Upload diagnostics
         if: always()
         uses: actions/upload-artifact@v7
@@ -64,6 +99,7 @@ jobs:
             build/libs/*.jar
             build/reports/tests/test/
             gametest.log
+            server-smoke.log
             run/logs/latest.log
             run/crash-reports/
           if-no-files-found: warn
