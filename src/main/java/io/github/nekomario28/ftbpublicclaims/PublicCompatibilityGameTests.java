@@ -7,6 +7,7 @@ import io.github.nekomario28.ftbpublicclaims.publicclaim.FTBServerTeamBridge;
 import io.github.nekomario28.ftbpublicclaims.publicclaim.PublicClaimProject;
 import io.github.nekomario28.ftbpublicclaims.publicclaim.PublicClaimSavedData;
 import io.netty.channel.embedded.EmbeddedChannel;
+import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.network.Connection;
@@ -123,7 +124,7 @@ public final class PublicCompatibilityGameTests {
                 var publicTeam = FTBServerTeamBridge.find(project.teamId()).orElseThrow();
                 var publicData = FTBChunksAPI.api().getManager().getOrCreateData(publicTeam);
 
-                ChunkPos chunk = new ChunkPos(helper.absolutePos(helper.getOrigin()));
+                ChunkPos chunk = new ChunkPos(helper.absolutePos(BlockPos.ZERO));
                 ChunkDimPos dimensionChunk = new ChunkDimPos(helper.getLevel().dimension(), chunk);
                 var existing = FTBChunksAPI.api().getManager().getChunk(dimensionChunk);
                 if (existing != null) {
