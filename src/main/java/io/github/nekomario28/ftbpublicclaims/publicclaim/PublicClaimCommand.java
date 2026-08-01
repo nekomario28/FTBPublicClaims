@@ -4,6 +4,8 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import dev.ftb.mods.ftbchunks.api.FTBChunksAPI;
+import dev.ftb.mods.ftbchunks.api.FTBChunksProperties;
 import dev.ftb.mods.ftbteams.data.ServerTeam;
 import io.github.nekomario28.ftbpublicclaims.Config;
 import io.github.nekomario28.ftbpublicclaims.network.ModNetwork;
@@ -24,6 +26,8 @@ public final class PublicClaimCommand {
                                 .executes(context -> selectPersonal(context.getSource())))
                         .then(Commands.literal("public")
                                 .executes(context -> selectPublic(context.getSource()))))
+                .then(Commands.literal("status")
+                        .executes(context -> status(context.getSource())))
                 .then(Commands.literal("settings")
                         .then(booleanSetting("pvp", FTBServerTeamBridge::setPvp))
                         .then(booleanSetting("explosions", FTBServerTeamBridge::setExplosions))
@@ -66,6 +70,20 @@ public final class PublicClaimCommand {
         PublicClaimProject project = getGlobal(source);
         ModNetwork.selectProject(player, project);
         source.sendSuccess(() -> Component.literal("Claim target: global public").withStyle(ChatFormatting.GREEN), false);
+        return 1;
+    }
+
+    private static int status(CommandSourceStack source) throws CommandSyntaxException {
+        ServerTeam team = getGlobalTeam(source);
+        var data = FTBChunksAPI.api().getManager().getOrCreateData(team);
+        String status = "FTBPublicClaims status"
+                + " team=" + team.getId()
+                + " pvp=" + team.getProperty(FTBChunksProperties.ALLOW_PVP)
+                + " explosions=" + team.getProperty(FTBChunksProperties.ALLOW_EXPLOSIONS)
+                + " mob_griefing=" + team.getProperty(FTBChunksProperties.ALLOW_MOB_GRIEFING)
+                + " extra=" + data.getExtraClaimChunks()
+                + " claims=" + data.getClaimedChunks().size();
+        source.sendSuccess(() -> Component.literal(status), false);
         return 1;
     }
 
