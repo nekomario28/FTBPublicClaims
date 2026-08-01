@@ -18,6 +18,7 @@ import net.minecraft.world.level.ChunkPos;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.ScreenEvent;
 import org.lwjgl.glfw.GLFW;
 
@@ -29,8 +30,27 @@ import java.util.Set;
 public final class PublicClaimClientEvents {
     private static final Field SELECTED_CHUNKS = findSelectedChunksField();
     private static final boolean UI_PROBE = Boolean.getBoolean("ftbpublicclaims.uiProbe");
+    private static int probeTicks;
+    private static boolean probeMapOpened;
 
     private PublicClaimClientEvents() {
+    }
+
+    @SubscribeEvent
+    public static void onClientTick(ClientTickEvent.Post event) {
+        if (!UI_PROBE || probeMapOpened) {
+            return;
+        }
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null || minecraft.level == null) {
+            probeTicks = 0;
+            return;
+        }
+        if (++probeTicks >= 40) {
+            probeMapOpened = true;
+            ChunkScreen.openChunkScreen();
+            probe("automatic-map-open");
+        }
     }
 
     @SubscribeEvent
