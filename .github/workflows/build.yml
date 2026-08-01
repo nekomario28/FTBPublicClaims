@@ -56,7 +56,7 @@ jobs:
             ! -name '*sources*' ! -name '*javadoc*' | head -1)
           test -n "$jar_path"
           javap -classpath "$jar_path" -private \
-            dev.ftb.mods.ftbchunks.client.gui.ChunkScreen | tee ftbchunks-chunkscreen-abi.txt
+            dev.ftb.mods.ftbchunks.client.gui.ChunkScreenPanel | tee ftbchunks-chunkscreen-abi.txt
           grep -Eq 'selectedChunks' ftbchunks-chunkscreen-abi.txt
 
       - name: Run combined NeoForge GameTests
