@@ -59,32 +59,100 @@ jobs:
             dev.ftb.mods.ftbchunks.client.gui.ChunkScreenPanel | tee ftbchunks-chunkscreen-abi.txt
           grep -Eq 'selectedChunks' ftbchunks-chunkscreen-abi.txt
 
-      - name: Smoke test NeoForge client startup
+      - name: Exercise FTB Chunks map with real mouse input
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf run-client
-          set +e
-          timeout --signal=TERM 180s xvfb-run -a \
-            ./gradlew runClient --no-daemon --console=plain > client-smoke.log 2>&1
-          exit_code=$?
-          set -e
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xdotool imagemagick
 
-          if [[ "$exit_code" -ne 0 && "$exit_code" -ne 124 ]]; then
-            cat client-smoke.log
-            exit "$exit_code"
-          fi
+          rm -rf run run-client
+          mkdir -p run
+          cat > run/eula.txt <<'EOF'
+          eula=true
+          EOF
+          cat > run/server.properties <<'EOF'
+          online-mode=false
+          server-port=25565
+          spawn-protection=0
+          EOF
 
-          grep -Fq 'FTB Public Claims' client-smoke.log
-          grep -Fq 'FTB Chunks' client-smoke.log
-          if grep -Fq 'FTB Chunks 2101 map integration is unavailable' client-smoke.log; then
-            cat client-smoke.log
-            exit 1
+          Xvfb :99 -screen 0 1280x720x24 > xvfb.log 2>&1 &
+          xvfb_pid=$!
+          export DISPLAY=:99
+
+          setsid ./gradlew runServer --no-daemon --console=plain > ui-server.log 2>&1 &
+          server_pid=$!
+          client_pid=''
+          cleanup() {
+            [[ -n "$client_pid" ]] && kill -TERM -- "-$client_pid" 2>/dev/null || true
+            kill -TERM -- "-$server_pid" 2>/dev/null || true
+            kill "$xvfb_pid" 2>/dev/null || true
+            wait "$client_pid" 2>/dev/null || true
+            wait "$server_pid" 2>/dev/null || true
+            wait "$xvfb_pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          for _ in {1..120}; do
+            grep -Eq 'Done \([0-9.]+s\)!' ui-server.log && break
+            kill -0 "$server_pid" 2>/dev/null || { cat ui-server.log; exit 1; }
+            sleep 2
+          done
+          grep -Eq 'Done \([0-9.]+s\)!' ui-server.log
+
+          setsid env JAVA_TOOL_OPTIONS='-Dftbpublicclaims.uiProbe=true' \
+            ./gradlew runClient --no-daemon --console=plain \
+            --args='--quickPlayMultiplayer 127.0.0.1:25565 --width 1280 --height 720' \
+            > client-ui.log 2>&1 &
+          client_pid=$!
+
+          window_id=''
+          for _ in {1..120}; do
+            window_id=$(xdotool search --onlyvisible --name 'Minecraft' 2>/dev/null | head -1 || true)
+            [[ -n "$window_id" ]] && break
+            kill -0 "$client_pid" 2>/dev/null || { cat client-ui.log; exit 1; }
+            sleep 2
+          done
+          test -n "$window_id"
+          xdotool windowactivate --sync "$window_id"
+
+          for _ in {1..120}; do
+            grep -Eq 'Logged in|joined the game|Connecting to 127\.0\.0\.1' client-ui.log && break
+            kill -0 "$client_pid" 2>/dev/null || { cat client-ui.log; exit 1; }
+            sleep 2
+          done
+          sleep 8
+
+          xdotool key --window "$window_id" c
+          for _ in {1..10}; do
+            grep -Fq 'FTBPublicClaims UI probe: map-screen-init' client-ui.log && break
+            sleep 1
+          done
+          if ! grep -Fq 'FTBPublicClaims UI probe: map-screen-init' client-ui.log; then
+            xdotool key --window "$window_id" Escape
+            xdotool key --window "$window_id" m
+            sleep 10
           fi
-          if grep -Eq 'Crash report saved|Exception caught from mod|Failed to complete lifecycle event' client-smoke.log; then
-            cat client-smoke.log
-            exit 1
-          fi
+          grep -Fq 'FTBPublicClaims UI probe: map-screen-init' client-ui.log
+
+          eval "$(xdotool getwindowgeometry --shell "$window_id")"
+          center_x=$((WIDTH / 2))
+          xdotool mousemove --window "$window_id" "$center_x" 16 click 1
+          sleep 2
+          grep -Fq 'FTBPublicClaims UI probe: target-cycle public=true' client-ui.log
+
+          xdotool mousemove --window "$window_id" 520 260 mousedown 1 \
+            mousemove --window "$window_id" 570 310 sleep 1 mouseup 1
+          sleep 3
+          grep -Eq 'FTBPublicClaims UI probe: public-chunk-packet claim=true chunks=[1-9][0-9]* canceled=true' client-ui.log
+
+          xdotool mousemove --window "$window_id" 520 260 mousedown 3 \
+            mousemove --window "$window_id" 570 310 sleep 1 mouseup 3
+          sleep 3
+          grep -Eq 'FTBPublicClaims UI probe: public-chunk-packet claim=false chunks=[1-9][0-9]* canceled=true' client-ui.log
+
+          import -display :99 -window "$window_id" client-map-probe.png
 
       - name: Run combined NeoForge GameTests
         shell: bash
@@ -190,7 +258,10 @@ jobs:
             build/libs/*.jar
             build/reports/tests/test/
             ftbchunks-chunkscreen-abi.txt
-            client-smoke.log
+            client-ui.log
+            ui-server.log
+            xvfb.log
+            client-map-probe.png
             run/logs/latest.log
             run/crash-reports/
             gametest.log
