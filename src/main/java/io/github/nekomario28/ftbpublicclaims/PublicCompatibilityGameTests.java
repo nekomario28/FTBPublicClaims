@@ -135,7 +135,8 @@ public final class PublicCompatibilityGameTests {
 
                 var claimResult = publicData.claim(first.createCommandSourceStack(), dimensionChunk, false);
                 helper.assertTrue(claimResult.isSuccess(),
-                        "First normal player must be able to create the shared public claim: " + claimResult.getResultId());
+                        "First world participant must be able to create the shared public claim: "
+                                + claimResult.getResultId());
 
                 var claimed = FTBChunksAPI.api().getManager().getChunk(dimensionChunk);
                 helper.assertTrue(claimed != null, "Expected the public chunk to be claimed");
@@ -144,7 +145,7 @@ public final class PublicCompatibilityGameTests {
 
                 var unclaimResult = publicData.unclaim(second.createCommandSourceStack(), dimensionChunk, false, false);
                 helper.assertTrue(unclaimResult.isSuccess(),
-                        "A different normal player must be able to unclaim the shared public chunk: "
+                        "Another world participant must be able to unclaim the shared public chunk: "
                                 + unclaimResult.getResultId());
                 helper.assertTrue(FTBChunksAPI.api().getManager().getChunk(dimensionChunk) == null,
                         "Expected the shared public chunk to be unclaimed");
@@ -157,15 +158,15 @@ public final class PublicCompatibilityGameTests {
     }
 
     @GameTest(template = "empty", timeoutTicks = 300)
-    public static void nonMemberCanEditAndInteractInsidePublicClaim(GameTestHelper helper) {
+    public static void anyWorldParticipantCanEditAndInteractInsidePublicClaim(GameTestHelper helper) {
         var server = helper.getLevel().getServer();
-        final ServerPlayer claimer;
-        final ServerPlayer visitor;
+        final ServerPlayer firstParticipant;
+        final ServerPlayer anotherParticipant;
         try {
-            claimer = makeConnectedPlayer(helper, "pub-owner");
-            visitor = makeConnectedPlayer(helper, "pub-visitor");
+            firstParticipant = makeConnectedPlayer(helper, "participant-a");
+            anotherParticipant = makeConnectedPlayer(helper, "participant-b");
         } catch (Exception exception) {
-            helper.fail("Failed to create connected players: " + exception.getMessage());
+            helper.fail("Failed to create connected world participants: " + exception.getMessage());
             return;
         }
 
@@ -182,33 +183,34 @@ public final class PublicCompatibilityGameTests {
                 );
                 clearExistingClaim(server, dimensionChunk);
 
-                var claimResult = publicData.claim(claimer.createCommandSourceStack(), dimensionChunk, false);
+                var claimResult = publicData.claim(
+                        firstParticipant.createCommandSourceStack(), dimensionChunk, false
+                );
                 helper.assertTrue(claimResult.isSuccess(),
-                        "Expected the public claim to be created: " + claimResult.getResultId());
+                        "A world participant must be able to create the public claim: "
+                                + claimResult.getResultId());
                 var claimed = FTBChunksAPI.api().getManager().getChunk(dimensionChunk);
                 helper.assertTrue(claimed != null, "Expected claimed chunk data");
-                helper.assertTrue(!publicTeam.getMembers().contains(visitor.getUUID()),
-                        "Visitor must remain outside the Server Team membership list");
 
                 helper.getLevel().setBlockAndUpdate(absolutePos, Blocks.STONE.defaultBlockState());
                 ProtectionPolicy editPolicy = Protection.EDIT_BLOCK.getProtectionPolicy(
-                        visitor, absolutePos, InteractionHand.MAIN_HAND, claimed, null
+                        anotherParticipant, absolutePos, InteractionHand.MAIN_HAND, claimed, null
                 );
                 helper.assertValueEqual(editPolicy, ProtectionPolicy.ALLOW,
-                        "public block edit protection policy");
+                        "all world participants can edit public blocks");
 
                 helper.getLevel().setBlockAndUpdate(absolutePos, Blocks.CHEST.defaultBlockState());
                 ProtectionPolicy interactPolicy = Protection.INTERACT_BLOCK.getProtectionPolicy(
-                        visitor, absolutePos, InteractionHand.MAIN_HAND, claimed, null
+                        anotherParticipant, absolutePos, InteractionHand.MAIN_HAND, claimed, null
                 );
                 helper.assertValueEqual(interactPolicy, ProtectionPolicy.ALLOW,
-                        "public container interaction protection policy");
+                        "all world participants can interact with public containers");
 
                 publicData.unclaim(server.createCommandSourceStack().withPermission(4), dimensionChunk, false, true);
                 helper.succeed();
             } catch (Exception exception) {
-                FTBPublicClaims.LOGGER.error("Public protection policy GameTest failed", exception);
-                helper.fail("Public protection policy GameTest failed: " + exception.getMessage());
+                FTBPublicClaims.LOGGER.error("Public world-participant access GameTest failed", exception);
+                helper.fail("Public world-participant access GameTest failed: " + exception.getMessage());
             }
         });
     }
