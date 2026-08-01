@@ -28,6 +28,7 @@ import java.util.Set;
 @EventBusSubscriber(modid = FTBPublicClaims.MOD_ID, value = Dist.CLIENT)
 public final class PublicClaimClientEvents {
     private static final Field SELECTED_CHUNKS = findSelectedChunksField();
+    private static final boolean UI_PROBE = Boolean.getBoolean("ftbpublicclaims.uiProbe");
 
     private PublicClaimClientEvents() {
     }
@@ -41,6 +42,7 @@ public final class PublicClaimClientEvents {
         ClaimTargetButton targetButton = new ClaimTargetButton(chunkScreen);
         targetButton.setPosAndSize(chunkScreen.width / 2 - 100, 6, 200, 20);
         chunkScreen.add(targetButton);
+        probe("map-screen-init width=" + chunkScreen.width + " height=" + chunkScreen.height);
     }
 
     @SubscribeEvent
@@ -60,6 +62,7 @@ public final class PublicClaimClientEvents {
         if (event.getButton() != GLFW.GLFW_MOUSE_BUTTON_LEFT && event.getButton() != GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
             selectedChunks.clear();
             event.setCanceled(true);
+            probe("selection-canceled unsupported-button=" + event.getButton());
             return;
         }
 
@@ -71,18 +74,22 @@ public final class PublicClaimClientEvents {
                 );
             }
             event.setCanceled(true);
+            probe("selection-canceled force-load");
             return;
         }
 
         Set<ChunkPos> positions = new LinkedHashSet<>();
         selectedChunks.forEach(pos -> positions.add(new ChunkPos(pos.x(), pos.z())));
+        boolean claim = event.getButton() == GLFW.GLFW_MOUSE_BUTTON_LEFT;
         ModNetwork.sendChunkChange(new PublicChunkChangePacket(
                 selectedProject.get().id(),
-                event.getButton() == GLFW.GLFW_MOUSE_BUTTON_LEFT,
+                claim,
                 positions
         ));
         selectedChunks.clear();
         event.setCanceled(true);
+        probe("public-chunk-packet claim=" + claim + " chunks=" + positions.size()
+                + " canceled=" + event.isCanceled());
     }
 
     @SuppressWarnings("unchecked")
@@ -109,6 +116,12 @@ public final class PublicClaimClientEvents {
         }
     }
 
+    private static void probe(String message) {
+        if (UI_PROBE) {
+            FTBPublicClaims.LOGGER.info("FTBPublicClaims UI probe: {}", message);
+        }
+    }
+
     private static final class ClaimTargetButton extends SimpleTextButton {
         private ClaimTargetButton(Panel panel) {
             super(panel, ClientClaimContext.buttonLabel(), Icons.FRIENDS);
@@ -120,6 +133,7 @@ public final class PublicClaimClientEvents {
             setTitle(ClientClaimContext.buttonLabel());
             setWidth(200);
             playClickSound();
+            probe("target-cycle public=" + ClientClaimContext.selectedProject().isPresent());
         }
 
         @Override
