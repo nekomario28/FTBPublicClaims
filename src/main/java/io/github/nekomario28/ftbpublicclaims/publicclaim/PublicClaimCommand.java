@@ -13,6 +13,7 @@ import io.github.nekomario28.ftbpublicclaims.network.ModNetwork;
 import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.ChunkPos;
@@ -51,7 +52,13 @@ public final class PublicClaimCommand {
                                                         context.getSource(),
                                                         IntegerArgumentType.getInteger(context, "x"),
                                                         IntegerArgumentType.getInteger(context, "z")
-                                                )))))));
+                                                )))))
+                        .then(Commands.literal("personal_status")
+                                .then(Commands.argument("player", EntityArgument.player())
+                                        .executes(context -> personalStatus(
+                                                context.getSource(),
+                                                EntityArgument.getPlayer(context, "player")
+                                        ))))));
     }
 
     private static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> booleanSetting(
@@ -153,6 +160,18 @@ public final class PublicClaimCommand {
             return 0;
         }
         source.sendSuccess(() -> Component.literal("Public chunk claimed: " + x + "," + z), false);
+        return 1;
+    }
+
+    private static int personalStatus(CommandSourceStack source, ServerPlayer player) {
+        var data = FTBChunksAPI.api().getManager().getPersonalData(player.getUUID());
+        int extra = data == null ? 0 : data.getExtraClaimChunks();
+        int claims = data == null ? 0 : data.getClaimedChunks().size();
+        String status = "FTBPublicClaims personal status"
+                + " player=" + player.getGameProfile().getName()
+                + " extra=" + extra
+                + " claims=" + claims;
+        source.sendSuccess(() -> Component.literal(status), false);
         return 1;
     }
 
