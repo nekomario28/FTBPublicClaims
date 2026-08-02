@@ -21,7 +21,8 @@ public final class Config {
 
         MAX_PUBLIC_CHUNKS = BUILDER
                 .comment("Base maximum number of chunks in the global public realm")
-                .defineInRange("maxChunks", 64, 1, 100000);
+                // Retain the development config key so existing values carry forward.
+                .defineInRange("maxChunksPerProject", 64, 1, 100000);
 
         MAX_PUBLIC_CLAIM_DISTANCE = BUILDER
                 .comment("Maximum chunk distance from the player for map-based public claim changes")
