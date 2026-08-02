@@ -83,7 +83,7 @@ public final class PublicClaimSavedData extends SavedData {
     }
 
     public Optional<PublicClaimProject> find(UUID id) {
-        return Optional.ofNullable(projects.get(id));
+        return global().filter(project -> project.id().equals(id));
     }
 
     public List<PublicClaimProject> projectsForClient() {
