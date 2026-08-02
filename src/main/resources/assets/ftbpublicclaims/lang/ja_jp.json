@@ -21,6 +21,8 @@
   "ftbpublicclaims.public.deleted": "公共プロジェクト %s を削除し、すべてのclaimを解除しました。",
   "ftbpublicclaims.public.target_personal": "Claim先: 個人／現在のパーティー",
   "ftbpublicclaims.public.target_project": "Claim先: 公共 - %s",
+  "ftbpublicclaims.public.target_personal_short": "対象: 個人",
+  "ftbpublicclaims.public.target_public": "対象: 公共",
   "ftbpublicclaims.public.no_force_load": "公共プロジェクトではチャンクを強制ロードできません。",
   "ftbpublicclaims.public.claim_result": "公共claim: %s件変更、%s件拒否。",
   "ftbpublicclaims.public.unclaim_result": "公共unclaim: %s件変更、%s件拒否。"
