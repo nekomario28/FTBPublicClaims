@@ -31,7 +31,7 @@ public final class FTBServerTeamBridge {
         Optional<ServerTeam> recovered = findShared();
         if (recovered.isPresent()) {
             ServerTeam team = recovered.get();
-            applySharedProperties(team);
+            applySharedAccessProperties(team);
             FTBChunksAPI.api().getManager().getOrCreateData(team);
             return team;
         }
@@ -68,18 +68,10 @@ public final class FTBServerTeamBridge {
     }
 
     public static void applySharedProperties(ServerTeam team) {
-        team.setProperty(TeamProperties.DESCRIPTION, DESCRIPTION);
-        team.setProperty(FTBChunksProperties.BLOCK_EDIT_MODE, PrivacyMode.PUBLIC);
-        team.setProperty(FTBChunksProperties.BLOCK_INTERACT_MODE, PrivacyMode.PUBLIC);
-        team.setProperty(FTBChunksProperties.ENTITY_INTERACT_MODE, PrivacyMode.PUBLIC);
-        team.setProperty(FTBChunksProperties.NONLIVING_ENTITY_ATTACK_MODE, PrivacyMode.PUBLIC);
-        team.setProperty(FTBChunksProperties.CLAIM_VISIBILITY, PrivacyMode.PUBLIC);
+        configureSharedAccess(team);
         team.setProperty(FTBChunksProperties.ALLOW_EXPLOSIONS, false);
         team.setProperty(FTBChunksProperties.ALLOW_MOB_GRIEFING, false);
         team.setProperty(FTBChunksProperties.ALLOW_PVP, true);
-        team.setProperty(FTBChunksProperties.ALLOW_ALL_FAKE_PLAYERS, false);
-        team.setProperty(FTBChunksProperties.ALLOW_NAMED_FAKE_PLAYERS, List.of());
-        team.setProperty(FTBChunksProperties.ALLOW_FAKE_PLAYERS_BY_ID, false);
         saveAndSync(team);
     }
 
@@ -110,6 +102,23 @@ public final class FTBServerTeamBridge {
             return true;
         }
         throw new IllegalStateException("Unsupported FTB Chunks team-data implementation: " + data.getClass().getName());
+    }
+
+    private static void applySharedAccessProperties(ServerTeam team) {
+        configureSharedAccess(team);
+        saveAndSync(team);
+    }
+
+    private static void configureSharedAccess(ServerTeam team) {
+        team.setProperty(TeamProperties.DESCRIPTION, DESCRIPTION);
+        team.setProperty(FTBChunksProperties.BLOCK_EDIT_MODE, PrivacyMode.PUBLIC);
+        team.setProperty(FTBChunksProperties.BLOCK_INTERACT_MODE, PrivacyMode.PUBLIC);
+        team.setProperty(FTBChunksProperties.ENTITY_INTERACT_MODE, PrivacyMode.PUBLIC);
+        team.setProperty(FTBChunksProperties.NONLIVING_ENTITY_ATTACK_MODE, PrivacyMode.PUBLIC);
+        team.setProperty(FTBChunksProperties.CLAIM_VISIBILITY, PrivacyMode.PUBLIC);
+        team.setProperty(FTBChunksProperties.ALLOW_ALL_FAKE_PLAYERS, false);
+        team.setProperty(FTBChunksProperties.ALLOW_NAMED_FAKE_PLAYERS, List.of());
+        team.setProperty(FTBChunksProperties.ALLOW_FAKE_PLAYERS_BY_ID, false);
     }
 
     private static void saveAndSync(ServerTeam team) {
