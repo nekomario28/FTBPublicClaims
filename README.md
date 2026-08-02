@@ -50,9 +50,9 @@ requireAdjacency = true
 - `enabled`: サーバー共通の公共領域を有効化
 - `maxChunksPerProject`: 公共領域の基本チャンク上限。旧開発設定との互換性のためキー名を維持
 - `maxClaimDistance`: マップ操作を許可するプレイヤーからの最大チャンク距離
-- `requireAdjacency`: 2チャンク目以降を既存の公共claimへ上下左右で隣接させる
+- `requireAdjacency`: 各ディメンションで、2チャンク目以降をそのディメンション内の既存公共claimへ上下左右で隣接させる
 
-追加の公共容量は基本上限へ加算されます。1つのPayloadで処理する変更数は最大64チャンクです。
+Overworld・Nether・Endはそれぞれ最初の公共claimを独立して作成できます。追加の公共容量は全ディメンション共通の基本上限へ加算されます。1つのPayloadで処理する変更数は最大64チャンクです。
 
 ## BuyClaimChunks Continuedとの併用
 
@@ -83,7 +83,7 @@ FTB Teams／FTB Chunksのバージョン依存処理は`FTBServerTeamBridge`と�
 
 GitHub Actionsでは次を自動検証します。
 
-- Java 21でのclean build
+- Java 21でのclean buildと配布JAR監査
 - BuyClaimChunks Continuedとの同時ロードと実購入
 - 異なる参加者による公共claim／unclaim
 - 全参加者のブロック編集・コンテナ操作権限
