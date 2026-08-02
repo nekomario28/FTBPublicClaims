@@ -31,14 +31,6 @@ public final class PublicClaimProject {
         return teamId;
     }
 
-    public boolean isOwner(UUID playerId) {
-        return false;
-    }
-
-    public boolean canManage(UUID playerId) {
-        return true;
-    }
-
     public CompoundTag save() {
         CompoundTag tag = new CompoundTag();
         tag.putUUID("id", id);
