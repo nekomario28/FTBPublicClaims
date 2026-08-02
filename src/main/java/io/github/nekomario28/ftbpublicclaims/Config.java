@@ -8,8 +8,7 @@ public final class Config {
     public static final ModConfigSpec SPEC;
 
     public static final ModConfigSpec.BooleanValue PUBLIC_CLAIMS_ENABLED;
-    public static final ModConfigSpec.IntValue MAX_PUBLIC_PROJECTS_PER_PLAYER;
-    public static final ModConfigSpec.IntValue MAX_PUBLIC_CHUNKS_PER_PROJECT;
+    public static final ModConfigSpec.IntValue MAX_PUBLIC_CHUNKS;
     public static final ModConfigSpec.IntValue MAX_PUBLIC_CLAIM_DISTANCE;
     public static final ModConfigSpec.BooleanValue REQUIRE_PUBLIC_CLAIM_ADJACENCY;
 
@@ -17,23 +16,19 @@ public final class Config {
         BUILDER.comment("FTB Public Claims configuration").push("publicClaims");
 
         PUBLIC_CLAIMS_ENABLED = BUILDER
-                .comment("Allow non-operator players to create and manage public claim projects")
+                .comment("Enable the server-wide public claim realm")
                 .define("enabled", true);
 
-        MAX_PUBLIC_PROJECTS_PER_PLAYER = BUILDER
-                .comment("Maximum number of public projects owned by one player")
-                .defineInRange("maxProjectsPerPlayer", 1, 0, 100);
-
-        MAX_PUBLIC_CHUNKS_PER_PROJECT = BUILDER
-                .comment("Maximum claimed chunks in one public project")
-                .defineInRange("maxChunksPerProject", 64, 1, 100000);
+        MAX_PUBLIC_CHUNKS = BUILDER
+                .comment("Base maximum number of chunks in the global public realm")
+                .defineInRange("maxChunks", 64, 1, 100000);
 
         MAX_PUBLIC_CLAIM_DISTANCE = BUILDER
                 .comment("Maximum chunk distance from the player for map-based public claim changes")
                 .defineInRange("maxClaimDistance", 16, 1, 128);
 
         REQUIRE_PUBLIC_CLAIM_ADJACENCY = BUILDER
-                .comment("Require new public chunks after the first one to touch an existing project chunk")
+                .comment("Require each new public chunk after the first to touch the existing public realm")
                 .define("requireAdjacency", true);
 
         BUILDER.pop();
@@ -44,12 +39,8 @@ public final class Config {
         return PUBLIC_CLAIMS_ENABLED.get();
     }
 
-    public static int getMaxPublicProjectsPerPlayer() {
-        return MAX_PUBLIC_PROJECTS_PER_PLAYER.get();
-    }
-
-    public static int getMaxPublicChunksPerProject() {
-        return MAX_PUBLIC_CHUNKS_PER_PROJECT.get();
+    public static int getMaxPublicChunks() {
+        return MAX_PUBLIC_CHUNKS.get();
     }
 
     public static int getMaxPublicClaimDistance() {
