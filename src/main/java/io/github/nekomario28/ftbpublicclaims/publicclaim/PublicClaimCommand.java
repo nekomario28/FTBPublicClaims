@@ -71,22 +71,38 @@ public final class PublicClaimCommand {
     private static int selectPersonal(CommandSourceStack source) throws CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
         ModNetwork.selectPersonal(player);
-        source.sendSuccess(() -> Component.literal("Claim target: personal").withStyle(ChatFormatting.GREEN), false);
+        source.sendSuccess(
+                () -> Component.translatable("ftbpublicclaims.public.selected_personal")
+                        .withStyle(ChatFormatting.GREEN),
+                false
+        );
         return 1;
     }
 
     private static int selectPublic(CommandSourceStack source) throws CommandSyntaxException {
+        if (!requireEnabled(source)) {
+            return 0;
+        }
         ServerPlayer player = source.getPlayerOrException();
         PublicClaimProject project = getGlobal(source);
         ModNetwork.selectProject(player, project);
-        source.sendSuccess(() -> Component.literal("Claim target: global public").withStyle(ChatFormatting.GREEN), false);
+        source.sendSuccess(
+                () -> Component.translatable("ftbpublicclaims.public.selected_public")
+                        .withStyle(ChatFormatting.GREEN),
+                false
+        );
         return 1;
     }
 
     private static int status(CommandSourceStack source) throws CommandSyntaxException {
+        if (!Config.publicClaimsEnabled()) {
+            source.sendSuccess(() -> Component.literal("FTBPublicClaims status enabled=false"), false);
+            return 1;
+        }
         ServerTeam team = getGlobalTeam(source);
         var data = FTBChunksAPI.api().getManager().getOrCreateData(team);
         String status = "FTBPublicClaims status"
+                + " enabled=true"
                 + " team=" + team.getId()
                 + " pvp=" + team.getProperty(FTBChunksProperties.ALLOW_PVP)
                 + " explosions=" + team.getProperty(FTBChunksProperties.ALLOW_EXPLOSIONS)
@@ -103,10 +119,14 @@ public final class PublicClaimCommand {
             String name,
             SettingUpdater updater
     ) throws CommandSyntaxException {
+        if (!requireEnabled(source)) {
+            return 0;
+        }
         ServerTeam team = getGlobalTeam(source);
         updater.apply(team, enabled);
         source.sendSuccess(
-                () -> Component.literal("Public setting " + name + " = " + enabled).withStyle(ChatFormatting.GREEN),
+                () -> Component.translatable("ftbpublicclaims.public.setting_updated", name, enabled)
+                        .withStyle(ChatFormatting.GREEN),
                 false
         );
         return 1;
@@ -114,14 +134,16 @@ public final class PublicClaimCommand {
 
     private static int addExtraClaimChunks(CommandSourceStack source, int amount, int maximum)
             throws CommandSyntaxException {
-        if (!Config.publicClaimsEnabled()) {
-            source.sendFailure(Component.translatable("ftbpublicclaims.public.disabled").withStyle(ChatFormatting.RED));
+        if (!requireEnabled(source)) {
             return 0;
         }
         return FTBServerTeamBridge.addExtraClaimChunks(getGlobalTeam(source), amount, maximum) ? 1 : 0;
     }
 
     private static int claimChunk(CommandSourceStack source, int x, int z) throws CommandSyntaxException {
+        if (!requireEnabled(source)) {
+            return 0;
+        }
         ServerTeam team = getGlobalTeam(source);
         var data = FTBChunksAPI.api().getManager().getOrCreateData(team);
         ChunkDimPos pos = new ChunkDimPos(source.getLevel().dimension(), new ChunkPos(x, z));
@@ -132,6 +154,14 @@ public final class PublicClaimCommand {
         }
         source.sendSuccess(() -> Component.literal("Public chunk claimed: " + x + "," + z), false);
         return 1;
+    }
+
+    private static boolean requireEnabled(CommandSourceStack source) {
+        if (Config.publicClaimsEnabled()) {
+            return true;
+        }
+        source.sendFailure(Component.translatable("ftbpublicclaims.public.disabled").withStyle(ChatFormatting.RED));
+        return false;
     }
 
     private static PublicClaimProject getGlobal(CommandSourceStack source) throws CommandSyntaxException {
