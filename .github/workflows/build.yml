@@ -114,42 +114,67 @@ jobs:
           done
           test -n "$window_id"
 
-          for _ in {1..120}; do
-            grep -Eq 'Logged in|joined the game|Connecting to 127\.0\.0\.1' client-ui.log && break
+          for _ in {1..150}; do
+            grep -Fq 'FTBPublicClaims UI probe: map-screen-init' client-ui.log && break
             kill -0 "$client_pid" 2>/dev/null || { cat client-ui.log; exit 1; }
             sleep 2
           done
-          sleep 8
+          grep -Fq 'FTBPublicClaims UI probe: automatic-map-open' client-ui.log
 
-          xdotool key --window "$window_id" c
-          for _ in {1..10}; do
-            grep -Fq 'FTBPublicClaims UI probe: map-screen-init' client-ui.log && break
-            sleep 1
-          done
-          if ! grep -Fq 'FTBPublicClaims UI probe: map-screen-init' client-ui.log; then
-            xdotool key --window "$window_id" Escape
-            xdotool key --window "$window_id" m
-            sleep 10
-          fi
-          grep -Fq 'FTBPublicClaims UI probe: map-screen-init' client-ui.log
+          probe_line=$(grep -F 'FTBPublicClaims UI probe: map-screen-init' client-ui.log | tail -1)
+          value() {
+            local key=$1
+            printf '%s\n' "$probe_line" | sed -n "s/.* ${key}=\([0-9][0-9]*\).*/\1/p"
+          }
+          screen_width=$(value screenWidth)
+          screen_height=$(value screenHeight)
+          button_gui_x=$(value buttonCenterX)
+          button_gui_y=$(value buttonCenterY)
+          test -n "$screen_width"
+          test -n "$screen_height"
+          test -n "$button_gui_x"
+          test -n "$button_gui_y"
 
           eval "$(xdotool getwindowgeometry --shell "$window_id")"
-          center_x=$((WIDTH / 2))
-          xdotool mousemove --window "$window_id" "$center_x" 16 click 1
-          sleep 2
+          button_x=$((button_gui_x * WIDTH / screen_width))
+          button_y=$((button_gui_y * HEIGHT / screen_height))
+          drag_start_x=$(((screen_width / 2 - 30) * WIDTH / screen_width))
+          drag_start_y=$(((screen_height / 2 - 20) * HEIGHT / screen_height))
+          drag_end_x=$(((screen_width / 2 + 30) * WIDTH / screen_width))
+          drag_end_y=$(((screen_height / 2 + 20) * HEIGHT / screen_height))
+          printf 'Window=%sx%s GUI=%sx%s button=%s,%s drag=%s,%s->%s,%s\n' \
+            "$WIDTH" "$HEIGHT" "$screen_width" "$screen_height" \
+            "$button_x" "$button_y" "$drag_start_x" "$drag_start_y" "$drag_end_x" "$drag_end_y"
+
+          xdotool mousemove --window "$window_id" "$button_x" "$button_y" click 1
+          for _ in {1..20}; do
+            grep -Fq 'FTBPublicClaims UI probe: target-cycle public=true' client-ui.log && break
+            sleep 1
+          done
           grep -Fq 'FTBPublicClaims UI probe: target-cycle public=true' client-ui.log
 
-          xdotool mousemove --window "$window_id" 520 260 mousedown 1 \
-            mousemove --window "$window_id" 570 310 sleep 1 mouseup 1
-          sleep 3
+          xdotool mousemove --window "$window_id" "$drag_start_x" "$drag_start_y" mousedown 1 \
+            mousemove --window "$window_id" "$drag_end_x" "$drag_end_y" sleep 1 mouseup 1
+          for _ in {1..20}; do
+            grep -Eq 'FTBPublicClaims UI probe: public-chunk-packet claim=true chunks=[1-9][0-9]* canceled=true' client-ui.log && break
+            sleep 1
+          done
           grep -Eq 'FTBPublicClaims UI probe: public-chunk-packet claim=true chunks=[1-9][0-9]* canceled=true' client-ui.log
 
-          xdotool mousemove --window "$window_id" 520 260 mousedown 3 \
-            mousemove --window "$window_id" 570 310 sleep 1 mouseup 3
-          sleep 3
+          xdotool mousemove --window "$window_id" "$drag_start_x" "$drag_start_y" mousedown 3 \
+            mousemove --window "$window_id" "$drag_end_x" "$drag_end_y" sleep 1 mouseup 3
+          for _ in {1..20}; do
+            grep -Eq 'FTBPublicClaims UI probe: public-chunk-packet claim=false chunks=[1-9][0-9]* canceled=true' client-ui.log && break
+            sleep 1
+          done
           grep -Eq 'FTBPublicClaims UI probe: public-chunk-packet claim=false chunks=[1-9][0-9]* canceled=true' client-ui.log
 
           import -display :99 -window "$window_id" client-map-probe.png
+          grep -Fq 'Dev joined the game' ui-server.log
+          if grep -Eq 'Could not read FTB Chunks map selection|FTB Chunks 2101 map integration is unavailable' client-ui.log; then
+            cat client-ui.log
+            exit 1
+          fi
 
       - name: Run combined NeoForge GameTests
         shell: bash
