@@ -108,6 +108,54 @@ tasks.named('jar', Jar) {
     exclude 'io/github/nekomario28/ftbpublicclaims/PublicCompatibilityGameTests*.class'
 }
 
+def auditDistributableJar = tasks.register('auditDistributableJar') {
+    dependsOn tasks.named('jar')
+
+    doLast {
+        File jarFile = tasks.named('jar', Jar).get().archiveFile.get().asFile
+        def zip = new java.util.zip.ZipFile(jarFile)
+        try {
+            Set<String> entries = zip.entries().collect { it.name } as Set<String>
+
+            if (entries.any { it.startsWith('io/github/nekomario28/ftbpublicclaims/PublicCompatibilityGameTests') }) {
+                throw new GradleException('GameTest classes must not be shipped in the distributable JAR')
+            }
+            if (entries.contains('pack.mcmeta')) {
+                throw new GradleException('Stale pack.mcmeta must not be shipped')
+            }
+            if (!entries.contains('META-INF/neoforge.mods.toml')) {
+                throw new GradleException('Generated NeoForge metadata is missing')
+            }
+
+            String metadata = zip.getInputStream(zip.getEntry('META-INF/neoforge.mods.toml')).getText('UTF-8')
+            [
+                    "versionRange=\"[${ftb_chunks_version}]\"",
+                    "versionRange=\"[${ftb_teams_version}]\"",
+                    "versionRange=\"[${ftb_library_version}]\""
+            ].each { expected ->
+                if (!metadata.contains(expected)) {
+                    throw new GradleException("Distributable metadata is missing ${expected}")
+                }
+            }
+
+            ['en_us.json', 'ja_jp.json'].each { language ->
+                String path = "assets/${mod_id}/lang/${language}"
+                def entry = zip.getEntry(path)
+                if (entry == null) {
+                    throw new GradleException("Missing language resource ${path}")
+                }
+                new groovy.json.JsonSlurper().parseText(zip.getInputStream(entry).getText('UTF-8'))
+            }
+        } finally {
+            zip.close()
+        }
+    }
+}
+
+tasks.named('check') {
+    dependsOn auditDistributableJar
+}
+
 tasks.named('test', Test) {
     useJUnitPlatform()
 }
