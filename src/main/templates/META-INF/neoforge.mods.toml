@@ -28,21 +28,21 @@ side="BOTH"
 [[dependencies."${mod_id}"]]
 modId="ftbchunks"
 type="required"
-versionRange="[${ftb_chunks_version},2102)"
+versionRange="[${ftb_chunks_version}]"
 ordering="AFTER"
 side="BOTH"
 
 [[dependencies."${mod_id}"]]
 modId="ftbteams"
 type="required"
-versionRange="[${ftb_teams_version},2102)"
+versionRange="[${ftb_teams_version}]"
 ordering="AFTER"
 side="BOTH"
 
 [[dependencies."${mod_id}"]]
 modId="ftblibrary"
 type="required"
-versionRange="[${ftb_library_version},2102)"
+versionRange="[${ftb_library_version}]"
 ordering="AFTER"
 side="BOTH"
 
