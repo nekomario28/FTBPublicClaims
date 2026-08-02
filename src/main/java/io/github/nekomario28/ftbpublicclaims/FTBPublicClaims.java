@@ -35,7 +35,10 @@ public class FTBPublicClaims {
     public void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
             try {
-                PublicClaimSavedData.get(player.getServer()).getOrCreateGlobal(player.createCommandSourceStack());
+                if (Config.publicClaimsEnabled()) {
+                    PublicClaimSavedData.get(player.getServer())
+                            .getOrCreateGlobal(player.createCommandSourceStack());
+                }
                 ModNetwork.sendProjects(player);
             } catch (Exception exception) {
                 LOGGER.error("Failed to initialize global public claims", exception);
