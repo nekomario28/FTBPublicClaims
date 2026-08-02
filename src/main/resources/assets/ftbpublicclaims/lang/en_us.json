@@ -21,6 +21,8 @@
   "ftbpublicclaims.public.deleted": "Deleted public project %s and released all of its chunks.",
   "ftbpublicclaims.public.target_personal": "Claim target: Personal / current party",
   "ftbpublicclaims.public.target_project": "Claim target: Public - %s",
+  "ftbpublicclaims.public.target_personal_short": "Target: Personal",
+  "ftbpublicclaims.public.target_public": "Target: Public",
   "ftbpublicclaims.public.no_force_load": "Public projects cannot force-load chunks.",
   "ftbpublicclaims.public.claim_result": "Public claim: %s changed, %s rejected.",
   "ftbpublicclaims.public.unclaim_result": "Public unclaim: %s changed, %s rejected."
