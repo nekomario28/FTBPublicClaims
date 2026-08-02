@@ -56,8 +56,12 @@ public final class PublicClaimSavedData extends SavedData {
     public PublicClaimProject getOrCreateGlobal(CommandSourceStack source) throws CommandSyntaxException {
         PublicClaimProject existing = projects.values().stream().findFirst().orElse(null);
         if (existing != null) {
-            if (schemaVersion < CURRENT_SCHEMA) {
+            boolean schemaUpgrade = schemaVersion < CURRENT_SCHEMA;
+            boolean extraLegacyProjects = projects.size() > 1;
+            if (schemaUpgrade) {
                 FTBServerTeamBridge.find(existing.teamId()).ifPresent(FTBServerTeamBridge::applySharedProperties);
+            }
+            if (schemaUpgrade || extraLegacyProjects) {
                 schemaVersion = CURRENT_SCHEMA;
                 projects.clear();
                 projects.put(existing.id(), existing);
