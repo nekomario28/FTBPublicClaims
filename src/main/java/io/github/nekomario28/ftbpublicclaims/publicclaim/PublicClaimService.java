@@ -32,10 +32,6 @@ public final class PublicClaimService {
             player.sendSystemMessage(Component.translatable("ftbpublicclaims.public.disabled").withStyle(ChatFormatting.RED));
             return;
         }
-        if (!project.canManage(player.getUUID())) {
-            player.sendSystemMessage(Component.translatable("ftbpublicclaims.public.not_manager").withStyle(ChatFormatting.RED));
-            return;
-        }
 
         ServerTeam team = FTBServerTeamBridge.find(project.teamId()).orElse(null);
         if (team == null) {
@@ -73,9 +69,9 @@ public final class PublicClaimService {
         int changed = 0;
 
         // FTB Chunks 2101 deliberately exempts server teams from its normal
-        // claim-power limit. Public projects therefore enforce their own cap
+        // claim-power limit. The public realm therefore enforces its own cap
         // before calling the public ChunkTeamData claim API.
-        long maxChunks = (long) Config.getMaxPublicChunksPerProject() + teamData.getExtraClaimChunks();
+        long maxChunks = (long) Config.getMaxPublicChunks() + teamData.getExtraClaimChunks();
         int existing = teamData.getClaimedChunks().size();
 
         while (!pending.isEmpty() && existing + changed < maxChunks) {
@@ -108,7 +104,7 @@ public final class PublicClaimService {
         }
 
         if (!pending.isEmpty()) {
-            pending.forEach(pos -> addProblem(problems, "project_limit"));
+            pending.forEach(pos -> addProblem(problems, "realm_limit"));
         }
         return new ChangeSummary(changed, problems);
     }
@@ -124,7 +120,7 @@ public final class PublicClaimService {
             ChunkDimPos dimPos = new ChunkDimPos(player.level().dimension(), pos);
             ClaimedChunk chunk = FTBChunksAPI.api().getManager().getChunk(dimPos);
             if (chunk == null || !chunk.getTeamData().getTeam().getTeamId().equals(teamData.getTeam().getTeamId())) {
-                addProblem(problems, "not_project_claim");
+                addProblem(problems, "not_public_claim");
                 continue;
             }
             ClaimResult result = teamData.unclaim(player.createCommandSourceStack(), dimPos, false, false);
@@ -147,13 +143,13 @@ public final class PublicClaimService {
             return "already_claimed";
         }
 
-        if (Config.requirePublicClaimAdjacency() && !firstClaim && !touchesProjectClaim(teamData, player, pos)) {
+        if (Config.requirePublicClaimAdjacency() && !firstClaim && !touchesPublicClaim(teamData, player, pos)) {
             return "wait_for_adjacent";
         }
         return null;
     }
 
-    private static boolean touchesProjectClaim(ChunkTeamData teamData, ServerPlayer player, ChunkPos pos) {
+    private static boolean touchesPublicClaim(ChunkTeamData teamData, ServerPlayer player, ChunkPos pos) {
         for (ClaimedChunk chunk : teamData.getClaimedChunks()) {
             ChunkDimPos claimedPos = chunk.getPos();
             if (claimedPos.dimension().equals(player.level().dimension())
