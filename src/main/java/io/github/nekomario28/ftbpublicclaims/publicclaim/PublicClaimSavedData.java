@@ -82,7 +82,7 @@ public final class PublicClaimSavedData extends SavedData {
         return Optional.ofNullable(projects.get(id));
     }
 
-    public List<PublicClaimProject> manageableBy(UUID playerId) {
+    public List<PublicClaimProject> projectsForClient() {
         return global().map(List::of).orElseGet(List::of);
     }
 }
