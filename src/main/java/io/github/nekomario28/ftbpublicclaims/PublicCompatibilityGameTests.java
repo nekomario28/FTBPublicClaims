@@ -5,6 +5,9 @@ import dev.ftb.mods.ftbchunks.api.FTBChunksAPI;
 import dev.ftb.mods.ftbchunks.api.Protection;
 import dev.ftb.mods.ftbchunks.api.ProtectionPolicy;
 import dev.ftb.mods.ftblibrary.math.ChunkDimPos;
+import dev.ftb.mods.ftbteams.api.FTBTeamsAPI;
+import dev.ftb.mods.ftbteams.api.property.TeamProperties;
+import dev.ftb.mods.ftbteams.data.ServerTeam;
 import io.github.nekomario28.ftbpublicclaims.publicclaim.FTBServerTeamBridge;
 import io.github.nekomario28.ftbpublicclaims.publicclaim.PublicClaimProject;
 import io.github.nekomario28.ftbpublicclaims.publicclaim.PublicClaimSavedData;
@@ -38,6 +41,29 @@ import java.util.UUID;
 @PrefixGameTestTemplate(false)
 public final class PublicCompatibilityGameTests {
     private PublicCompatibilityGameTests() {
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 100)
+    public static void repeatedGlobalTeamCreationReusesTheExistingServerTeam(GameTestHelper helper) {
+        try {
+            var source = helper.getLevel().getServer().createCommandSourceStack().withPermission(4);
+            ServerTeam first = FTBServerTeamBridge.createShared(source);
+            ServerTeam second = FTBServerTeamBridge.createShared(source);
+
+            helper.assertValueEqual(second.getId(), first.getId(), "recovered global Server Team ID");
+            long matchingTeams = FTBTeamsAPI.api().getManager().getTeams().stream()
+                    .filter(ServerTeam.class::isInstance)
+                    .map(ServerTeam.class::cast)
+                    .filter(team -> "Global Public Claims".equals(
+                            team.getProperty(TeamProperties.DISPLAY_NAME)
+                    ))
+                    .count();
+            helper.assertValueEqual(matchingTeams, 1L, "number of global public Server Teams");
+            helper.succeed();
+        } catch (Exception exception) {
+            FTBPublicClaims.LOGGER.error("Global Server Team reuse GameTest failed", exception);
+            helper.fail("Global Server Team reuse GameTest failed: " + exception.getMessage());
+        }
     }
 
     @GameTest(template = "empty", timeoutTicks = 300)
