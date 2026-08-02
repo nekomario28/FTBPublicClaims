@@ -73,11 +73,19 @@ public final class PublicClaimService {
         // before calling the public ChunkTeamData claim API.
         long maxChunks = (long) Config.getMaxPublicChunks() + teamData.getExtraClaimChunks();
         int existing = teamData.getClaimedChunks().size();
+        long existingInDimension = teamData.getClaimedChunks().stream()
+                .map(ClaimedChunk::getPos)
+                .filter(pos -> pos.dimension().equals(player.level().dimension()))
+                .count();
 
         while (!pending.isEmpty() && existing + changed < maxChunks) {
             boolean progressed = false;
             for (ChunkPos pos : new ArrayList<>(pending)) {
-                String validation = validateClaim(player, teamData, pos, existing + changed == 0);
+                // Adjacency forms one connected public region per dimension.
+                // A claim in the Overworld must not prevent the first claim in
+                // the Nether or End from establishing that dimension's region.
+                boolean firstClaimInDimension = existingInDimension + changed == 0;
+                String validation = validateClaim(player, teamData, pos, firstClaimInDimension);
                 if ("wait_for_adjacent".equals(validation)) {
                     continue;
                 }
