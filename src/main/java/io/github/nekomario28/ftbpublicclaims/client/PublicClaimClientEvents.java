@@ -62,7 +62,13 @@ public final class PublicClaimClientEvents {
         ClaimTargetButton targetButton = new ClaimTargetButton(chunkScreen);
         targetButton.setPosAndSize(chunkScreen.width / 2 - 100, 6, 200, 20);
         chunkScreen.add(targetButton);
-        probe("map-screen-init width=" + chunkScreen.width + " height=" + chunkScreen.height);
+        probe("map-screen-init"
+                + " screenWidth=" + event.getScreen().width
+                + " screenHeight=" + event.getScreen().height
+                + " chunkWidth=" + chunkScreen.width
+                + " chunkHeight=" + chunkScreen.height
+                + " buttonCenterX=" + (targetButton.getX() + targetButton.getWidth() / 2)
+                + " buttonCenterY=" + (targetButton.getY() + targetButton.getHeight() / 2));
     }
 
     @SubscribeEvent
