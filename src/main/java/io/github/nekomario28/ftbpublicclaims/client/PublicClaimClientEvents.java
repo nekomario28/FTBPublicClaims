@@ -13,6 +13,7 @@ import io.github.nekomario28.ftbpublicclaims.network.ModNetwork;
 import io.github.nekomario28.ftbpublicclaims.network.packet.PublicChunkChangePacket;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.AccessibilityOnboardingScreen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.ChunkPos;
 import net.neoforged.api.distmarker.Dist;
@@ -32,6 +33,7 @@ public final class PublicClaimClientEvents {
     private static final boolean UI_PROBE = Boolean.getBoolean("ftbpublicclaims.uiProbe");
     private static int probeTicks;
     private static boolean probeMapOpened;
+    private static boolean probeOnboardingDismissed;
 
     private PublicClaimClientEvents() {
     }
@@ -44,6 +46,11 @@ public final class PublicClaimClientEvents {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.player == null || minecraft.level == null) {
             probeTicks = 0;
+            if (!probeOnboardingDismissed && minecraft.screen instanceof AccessibilityOnboardingScreen) {
+                probeOnboardingDismissed = true;
+                minecraft.screen.onClose();
+                probe("dismissed-accessibility-onboarding");
+            }
             return;
         }
         if (++probeTicks >= 40) {
