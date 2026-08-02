@@ -14,6 +14,7 @@ import dev.ftb.mods.ftbteams.data.ServerTeam;
 import dev.ftb.mods.ftbteams.data.TeamManagerImpl;
 import net.minecraft.commands.CommandSourceStack;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -27,6 +28,14 @@ public final class FTBServerTeamBridge {
     }
 
     public static ServerTeam createShared(CommandSourceStack source) throws CommandSyntaxException {
+        Optional<ServerTeam> recovered = findShared();
+        if (recovered.isPresent()) {
+            ServerTeam team = recovered.get();
+            applySharedProperties(team);
+            FTBChunksAPI.api().getManager().getOrCreateData(team);
+            return team;
+        }
+
         Team created = requireManager().createServerTeam(
                 source.withSuppressedOutput(), TEAM_NAME, DESCRIPTION, null
         );
@@ -45,6 +54,17 @@ public final class FTBServerTeamBridge {
         return FTBTeamsAPI.api().getManager().getTeamByID(teamId)
                 .filter(ServerTeam.class::isInstance)
                 .map(ServerTeam.class::cast);
+    }
+
+    public static Optional<ServerTeam> findShared() {
+        if (!FTBTeamsAPI.api().isManagerLoaded()) {
+            return Optional.empty();
+        }
+        return FTBTeamsAPI.api().getManager().getTeams().stream()
+                .filter(ServerTeam.class::isInstance)
+                .map(ServerTeam.class::cast)
+                .filter(team -> TEAM_NAME.equals(team.getProperty(TeamProperties.DISPLAY_NAME)))
+                .min(Comparator.comparing(team -> team.getId().toString()));
     }
 
     public static void applySharedProperties(ServerTeam team) {
