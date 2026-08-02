@@ -1,5 +1,6 @@
 package io.github.nekomario28.ftbpublicclaims.network;
 
+import io.github.nekomario28.ftbpublicclaims.Config;
 import io.github.nekomario28.ftbpublicclaims.network.packet.ProjectSyncPacket;
 import io.github.nekomario28.ftbpublicclaims.network.packet.PublicChunkChangePacket;
 import io.github.nekomario28.ftbpublicclaims.network.packet.SelectProjectPacket;
@@ -42,11 +43,13 @@ public final class ModNetwork {
     }
 
     public static void sendProjects(ServerPlayer player) {
-        List<ProjectSyncPacket.ProjectSummary> projects = PublicClaimSavedData.get(player.getServer())
-                .manageableBy(player.getUUID())
-                .stream()
-                .map(project -> new ProjectSyncPacket.ProjectSummary(project.id(), project.name()))
-                .toList();
+        List<ProjectSyncPacket.ProjectSummary> projects = Config.publicClaimsEnabled()
+                ? PublicClaimSavedData.get(player.getServer())
+                        .projectsForClient()
+                        .stream()
+                        .map(project -> new ProjectSyncPacket.ProjectSummary(project.id(), project.name()))
+                        .toList()
+                : List.of();
         PacketDistributor.sendToPlayer(player, new ProjectSyncPacket(projects));
     }
 
