@@ -38,12 +38,25 @@ jobs:
       - name: Download BuyClaimChunks Continued
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
+          set -euo pipefail
           mkdir -p libs
-          gh release download v1.1.1 \
-            --repo nekomario28/BuyClaimChunks \
-            --pattern 'buyclaimchunks-continued-neoforge-1.21.1-1.1.1.jar' \
-            --dir libs
+          for attempt in 1 2 3 4 5; do
+            rm -f libs/buyclaimchunks-continued-neoforge-1.21.1-1.1.1.jar
+            if gh release download v1.1.1 \
+              --repo nekomario28/BuyClaimChunks \
+              --pattern 'buyclaimchunks-continued-neoforge-1.21.1-1.1.1.jar' \
+              --dir libs; then
+              break
+            fi
+            if [[ "$attempt" == 5 ]]; then
+              echo 'Unable to download BuyClaimChunks Continued after five attempts.' >&2
+              exit 1
+            fi
+            sleep $((attempt * 5))
+          done
+          test -s libs/buyclaimchunks-continued-neoforge-1.21.1-1.1.1.jar
 
       - name: Compile, test, and audit distributable JAR
         run: ./gradlew clean test build --no-daemon --stacktrace
