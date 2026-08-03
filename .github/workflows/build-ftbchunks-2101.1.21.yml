@@ -1,6 +1,7 @@
 name: Build against FTB Chunks 2101.1.21
 
 on:
+  pull_request:
   push:
     branches:
       - neoforge-1.21.1-port
