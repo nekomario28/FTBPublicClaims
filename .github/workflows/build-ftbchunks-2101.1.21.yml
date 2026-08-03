@@ -45,8 +45,10 @@ jobs:
             --pattern 'buyclaimchunks-continued-neoforge-1.21.1-1.1.1.jar' \
             --dir libs
 
-      - name: Select FTB Chunks 2101.1.21
-        run: sed -i 's/^ftb_chunks_version=.*/ftb_chunks_version=2101.1.21/' gradle.properties
+      - name: Select updated FTB stack
+        run: |
+          sed -i 's/^ftb_chunks_version=.*/ftb_chunks_version=2101.1.21/' gradle.properties
+          sed -i 's/^ftb_library_version=.*/ftb_library_version=2101.1.34/' gradle.properties
 
       - name: Compile, test, and audit distributable JAR
         run: ./gradlew clean test build --no-daemon --stacktrace
