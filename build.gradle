@@ -75,20 +75,21 @@ dependencies {
 
 def generateModMetadata = tasks.register('generateModMetadata', ProcessResources) {
     def replaceProperties = [
-            minecraft_version      : minecraft_version,
-            minecraft_version_range: minecraft_version_range,
-            neo_version_range      : neo_version_range,
-            loader_version_range   : loader_version_range,
-            ftb_chunks_version     : ftb_chunks_version,
-            ftb_teams_version      : ftb_teams_version,
-            ftb_library_version    : ftb_library_version,
-            architectury_version   : architectury_version,
-            mod_id                 : mod_id,
-            mod_name               : mod_name,
-            mod_license            : mod_license,
-            mod_version            : mod_version,
-            mod_authors            : mod_authors,
-            mod_description        : mod_description
+            minecraft_version       : minecraft_version,
+            minecraft_version_range : minecraft_version_range,
+            neo_version_range       : neo_version_range,
+            loader_version_range    : loader_version_range,
+            ftb_chunks_version      : ftb_chunks_version,
+            ftb_chunks_min_version  : ftb_chunks_min_version,
+            ftb_teams_version       : ftb_teams_version,
+            ftb_library_version     : ftb_library_version,
+            architectury_version    : architectury_version,
+            mod_id                  : mod_id,
+            mod_name                : mod_name,
+            mod_license             : mod_license,
+            mod_version             : mod_version,
+            mod_authors             : mod_authors,
+            mod_description         : mod_description
     ]
 
     inputs.properties replaceProperties
@@ -128,13 +129,15 @@ def auditDistributableJar = tasks.register('auditDistributableJar') {
             }
 
             String metadata = zip.getInputStream(zip.getEntry('META-INF/neoforge.mods.toml')).getText('UTF-8')
-            [
-                    "versionRange=\"[${ftb_chunks_version}]\"",
-                    "versionRange=\"[${ftb_teams_version}]\"",
-                    "versionRange=\"[${ftb_library_version}]\""
-            ].each { expected ->
-                if (!metadata.contains(expected)) {
-                    throw new GradleException("Distributable metadata is missing ${expected}")
+            String expectedFtbChunksRange = "versionRange=\"[${ftb_chunks_min_version},2102)\""
+            if (!metadata.contains(expectedFtbChunksRange)) {
+                throw new GradleException("Distributable metadata is missing ${expectedFtbChunksRange}")
+            }
+
+            ['ftbteams', 'ftblibrary', 'architectury'].each { forbiddenDependency ->
+                if (metadata.contains("modId=\"${forbiddenDependency}\"")) {
+                    throw new GradleException(
+                            "Runtime dependency metadata must match BuyClaimChunks and must not pin ${forbiddenDependency}")
                 }
             }
 
