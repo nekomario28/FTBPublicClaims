@@ -10,6 +10,7 @@ Minecraft 1.21.1／NeoForge向けのFTB Chunksアドオンです。サーバー�
 
 - 誰でも公共チャンクをclaim／unclaim可能
 - 誰でも公共領域内のブロック編集、コンテナ・Entity操作が可能
+- 公共チャンク同士を隣接させる必要はなく、離れた場所にもclaim可能
 - FTB Chunksマップ上部の`対象: 個人`／`対象: 公共`ボタンでclaim先を切替
 - 公共モードでは左ドラッグでclaim、右ドラッグでunclaim
 - 公共claimの強制ロードは不可
@@ -44,15 +45,13 @@ Minecraft 1.21.1／NeoForge向けのFTB Chunksアドオンです。サーバー�
 enabled = true
 maxChunksPerProject = 64
 maxClaimDistance = 16
-requireAdjacency = true
 ```
 
 - `enabled`: サーバー共通の公共領域を有効化
 - `maxChunksPerProject`: 公共領域の基本チャンク上限。旧開発設定との互換性のためキー名を維持
 - `maxClaimDistance`: マップ操作を許可するプレイヤーからの最大チャンク距離
-- `requireAdjacency`: 各ディメンションで、2チャンク目以降をそのディメンション内の既存公共claimへ上下左右で隣接させる
 
-Overworld・Nether・Endはそれぞれ最初の公共claimを独立して作成できます。追加の公共容量は全ディメンション共通の基本上限へ加算されます。1つのPayloadで処理する変更数は最大64チャンクです。
+公共claimの配置に隣接条件はありません。旧版のconfigに`requireAdjacency`が残っていても、現在の実装では使用されません。追加の公共容量は全ディメンション共通の基本上限へ加算されます。1つのPayloadで処理する変更数は最大64チャンクです。
 
 ## BuyClaimChunks Continuedとの併用
 
@@ -72,10 +71,8 @@ CIではBuyClaimChunks Continued 1.1.1を同時ロードし、実際のダイヤ
 - Minecraft 1.21.1
 - NeoForge 21.1.242（21.1系）
 - Java 21
-- FTB Chunks 2101.1.20
-- FTB Teams 2101.1.9
-- FTB Library 2101.1.30
-- Architectury API 13.0.8
+- FTB Chunks 2101.1.20以上、2102未満
+- 検証構成: FTB Chunks 2101.1.21／FTB Teams 2101.1.10／FTB Library 2101.1.34／Architectury API 13.0.8
 
 FTB Teams／FTB Chunksのバージョン依存処理は`FTBServerTeamBridge`とクライアント統合部へ隔離しています。CIでは使用するFTB Chunks JARのクライアントABIも検査します。
 
@@ -85,6 +82,7 @@ GitHub Actionsでは次を自動検証します。
 
 - Java 21でのclean buildと配布JAR監査
 - BuyClaimChunks Continuedとの同時ロードと実購入
+- 離れた公共チャンクを同じ公共領域としてclaim可能
 - 異なる参加者による公共claim／unclaim
 - 全参加者のブロック編集・コンテナ操作権限
 - Xvfb上の実NeoForgeクライアントと実マウス入力
