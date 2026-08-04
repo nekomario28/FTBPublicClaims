@@ -39,7 +39,7 @@ public final class PublicCompatibilityGameTestsDisconnected {
         var server = helper.getLevel().getServer();
         final ServerPlayer player;
         try {
-            player = makeConnectedPlayer(helper, "public-disconnected-claimer");
+            player = makeConnectedPlayer(helper, "pub-disconn");
         } catch (Exception exception) {
             helper.fail("Failed to create connected player: " + exception.getMessage());
             return;
