@@ -1,6 +1,11 @@
 name: Actions Storage Hygiene Nonempty Pilot
 
 on:
+  push:
+    branches:
+      - 'pilot/actions-storage-hygiene-nonempty'
+    paths:
+      - '.github/workflows/actions-storage-hygiene-nonempty-pilot.yml'
   pull_request:
     types: [opened, reopened, synchronize]
     branches: [public-claim-context]
@@ -13,12 +18,12 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: actions-storage-hygiene-nonempty-${{ github.event.pull_request.number }}
+  group: actions-storage-hygiene-nonempty-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   seed:
-    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'pilot/actions-storage-hygiene-nonempty'
+    if: github.ref == 'refs/heads/pilot/actions-storage-hygiene-nonempty' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'pilot/actions-storage-hygiene-nonempty')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -47,7 +52,7 @@ jobs:
 
   classify:
     needs: seed
-    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'pilot/actions-storage-hygiene-nonempty'
+    if: github.ref == 'refs/heads/pilot/actions-storage-hygiene-nonempty' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'pilot/actions-storage-hygiene-nonempty')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
