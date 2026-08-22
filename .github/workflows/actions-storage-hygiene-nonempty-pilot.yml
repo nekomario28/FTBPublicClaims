@@ -1,0 +1,344 @@
+name: Actions Storage Hygiene Nonempty Pilot
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    branches: [public-claim-context]
+    paths:
+      - '.github/workflows/actions-storage-hygiene-nonempty-pilot.yml'
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: actions-storage-hygiene-nonempty-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  seed:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'pilot/actions-storage-hygiene-nonempty'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Create tiny diagnostic payloads
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'temporary live artifact for read-only classifier\n' > "$RUNNER_TEMP/storage-hygiene-live.txt"
+          printf 'temporary protected-name artifact for read-only classifier\n' > "$RUNNER_TEMP/storage-hygiene-release.txt"
+
+      - name: Upload ordinary live seed
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: storage-hygiene-live-seed-${{ github.run_id }}
+          path: ${{ runner.temp }}/storage-hygiene-live.txt
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Upload protected-name live seed
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-storage-hygiene-live-seed-${{ github.run_id }}
+          path: ${{ runner.temp }}/storage-hygiene-release.txt
+          retention-days: 1
+          if-no-files-found: error
+
+  classify:
+    needs: seed
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'pilot/actions-storage-hygiene-nonempty'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CLEANUP_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      CURRENT_RUN_ID: ${{ github.run_id }}
+    steps:
+      - name: Run fixture and live read-only classification
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import collections
+          import json
+          import os
+          import re
+          import time
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+          from datetime import datetime, timedelta, timezone
+
+          repo = os.environ['REPO']
+          token = os.environ['CLEANUP_TOKEN']
+          default_branch = os.environ['DEFAULT_BRANCH']
+          current_run_id = int(os.environ['CURRENT_RUN_ID'])
+          api = 'https://api.github.com'
+          now = datetime.now(timezone.utc)
+          headers = {
+              'Authorization': f'Bearer {token}',
+              'Accept': 'application/vnd.github+json',
+              'X-GitHub-Api-Version': '2022-11-28',
+              'User-Agent': 'actions-storage-hygiene-nonempty-pilot',
+          }
+
+          protected_terms = (
+              'release', 'model', 'checkpoint', 'dataset', 'video',
+              'replay', 'backup', 'save', 'export',
+          )
+          non_success = {
+              'failure', 'cancelled', 'timed_out',
+              'action_required', 'stale', 'skipped',
+          }
+
+          def artifact_family(name):
+              value = re.sub(r'-[0-9a-f]{40}$', '-<sha>', name, flags=re.I)
+              value = re.sub(r'-\d{8,}(-\d+)?$', '-<id>', value)
+              return value
+
+          def age_days(artifact):
+              created_at = datetime.fromisoformat(
+                  artifact['created_at'].replace('Z', '+00:00')
+              )
+              return (now - created_at).total_seconds() / 86400.0
+
+          def classify_one(
+              artifact,
+              *,
+              newest_id,
+              run,
+              pr_states=None,
+              unresolved_pr=False,
+              branch_exists=None,
+          ):
+              artifact_id = int(artifact['id'])
+              name = str(artifact.get('name', ''))
+              age = age_days(artifact)
+              low_name = name.lower()
+              pull_requests = (run or {}).get('pull_requests') or []
+              pr_states = list(pr_states or [])
+
+              if any(term in low_name for term in protected_terms):
+                  return 'KEEP', 'protected-durable-asset'
+
+              if run and run.get('conclusion') == 'success':
+                  if unresolved_pr:
+                      return 'UNKNOWN', 'pull-request-state-unresolved'
+                  if pr_states and any(state == 'open' for state in pr_states):
+                      return 'KEEP', 'open-pr-success-evidence'
+                  if run.get('head_branch') == default_branch:
+                      return 'KEEP', 'default-branch-success-evidence'
+                  if artifact.get('expired'):
+                      return 'DELETE', 'expired'
+                  if newest_id != artifact_id and age >= 1:
+                      return 'DELETE', 'older-duplicate-family'
+                  if pr_states and all(state == 'closed' for state in pr_states) and age >= 7:
+                      return 'DELETE', 'successful-closed-pr-after-grace'
+                  if not pull_requests:
+                      branch = run.get('head_branch')
+                      if branch and branch != default_branch:
+                          if branch_exists is True:
+                              return 'KEEP', 'live-nondefault-branch-success'
+                          if branch_exists is False and age >= 7:
+                              return 'DELETE', 'successful-deleted-branch-after-grace'
+                          if branch_exists is False:
+                              return 'KEEP', 'deleted-branch-within-grace'
+                      return 'UNKNOWN', 'successful-run-origin-unresolved'
+
+              if artifact.get('expired'):
+                  return 'DELETE', 'expired'
+              if run is None:
+                  return 'UNKNOWN', 'workflow-run-unresolved'
+              if run.get('conclusion') in non_success and age >= 1:
+                  return 'DELETE', f"non-success-run:{run.get('conclusion')}"
+              if newest_id != artifact_id and age >= 1:
+                  return 'DELETE', 'older-duplicate-family'
+              if run.get('conclusion') is None:
+                  return 'KEEP', 'run-not-completed'
+              return 'KEEP', 'within-policy'
+
+          def fixture_artifact(artifact_id, name, days, expired=False):
+              return {
+                  'id': artifact_id,
+                  'name': name,
+                  'created_at': (now - timedelta(days=days)).isoformat(),
+                  'expired': expired,
+              }
+
+          fixture_cases = [
+              ('protected', fixture_artifact(1, 'release-proof', 30), 1, {'conclusion': 'success', 'head_branch': 'feature', 'pull_requests': []}, [], False, False, ('KEEP', 'protected-durable-asset')),
+              ('open-pr', fixture_artifact(2, 'ci-proof', 30), 2, {'conclusion': 'success', 'head_branch': 'feature', 'pull_requests': [{'number': 7}]}, ['open'], False, None, ('KEEP', 'open-pr-success-evidence')),
+              ('default-branch', fixture_artifact(3, 'ci-main', 30), 3, {'conclusion': 'success', 'head_branch': default_branch, 'pull_requests': []}, [], False, None, ('KEEP', 'default-branch-success-evidence')),
+              ('expired', fixture_artifact(4, 'ci-expired', 2, True), 4, {'conclusion': 'failure', 'head_branch': 'feature', 'pull_requests': []}, [], False, None, ('DELETE', 'expired')),
+              ('duplicate', fixture_artifact(5, 'ci-family-12345678', 2), 6, {'conclusion': 'success', 'head_branch': 'feature', 'pull_requests': [{'number': 8}]}, ['closed'], False, None, ('DELETE', 'older-duplicate-family')),
+              ('closed-pr', fixture_artifact(7, 'ci-closed', 8), 7, {'conclusion': 'success', 'head_branch': 'feature', 'pull_requests': [{'number': 9}]}, ['closed'], False, None, ('DELETE', 'successful-closed-pr-after-grace')),
+              ('deleted-branch', fixture_artifact(8, 'ci-deleted', 8), 8, {'conclusion': 'success', 'head_branch': 'gone-branch', 'pull_requests': []}, [], False, False, ('DELETE', 'successful-deleted-branch-after-grace')),
+              ('unresolved-run', fixture_artifact(9, 'ci-unknown-run', 2), 9, None, [], False, None, ('UNKNOWN', 'workflow-run-unresolved')),
+              ('unresolved-pr', fixture_artifact(10, 'ci-unknown-pr', 2), 10, {'conclusion': 'success', 'head_branch': 'feature', 'pull_requests': [{'number': 10}]}, [], True, None, ('UNKNOWN', 'pull-request-state-unresolved')),
+              ('failed-old', fixture_artifact(11, 'ci-failed', 2), 11, {'conclusion': 'failure', 'head_branch': 'feature', 'pull_requests': []}, [], False, None, ('DELETE', 'non-success-run:failure')),
+              ('in-progress', fixture_artifact(12, 'ci-running', 0), 12, {'conclusion': None, 'head_branch': 'feature', 'pull_requests': []}, [], False, None, ('KEEP', 'run-not-completed')),
+          ]
+
+          for label, artifact, newest_id, run, pr_states, unresolved_pr, branch_state, expected in fixture_cases:
+              actual = classify_one(
+                  artifact,
+                  newest_id=newest_id,
+                  run=run,
+                  pr_states=pr_states,
+                  unresolved_pr=unresolved_pr,
+                  branch_exists=branch_state,
+              )
+              if actual != expected:
+                  raise AssertionError((label, expected, actual))
+          print(f'FIXTURE_CLASSIFIER_PASS cases={len(fixture_cases)}')
+
+          def request(path, allow_404=False):
+              req = urllib.request.Request(api + path, headers=headers, method='GET')
+              try:
+                  with urllib.request.urlopen(req, timeout=60) as response:
+                      raw = response.read()
+                      return json.loads(raw.decode('utf-8')) if raw else None
+              except urllib.error.HTTPError as exc:
+                  if allow_404 and exc.code == 404:
+                      return None
+                  body = exc.read().decode('utf-8', errors='replace')
+                  raise RuntimeError(f'GET {path} -> {exc.code}: {body}') from exc
+
+          def collect_artifacts():
+              out = []
+              page = 1
+              while True:
+                  payload = request(f'/repos/{repo}/actions/artifacts?per_page=100&page={page}')
+                  batch = payload.get('artifacts', [])
+                  out.extend(batch)
+                  if len(batch) < 100:
+                      return out
+                  page += 1
+
+          ordinary_name = f'storage-hygiene-live-seed-{current_run_id}'
+          protected_name = f'release-storage-hygiene-live-seed-{current_run_id}'
+          targets = {ordinary_name, protected_name}
+
+          artifacts = []
+          for _ in range(20):
+              artifacts = collect_artifacts()
+              visible = {
+                  str(item.get('name', ''))
+                  for item in artifacts
+                  if int((item.get('workflow_run') or {}).get('id') or 0) == current_run_id
+              }
+              if targets.issubset(visible):
+                  break
+              time.sleep(2)
+          else:
+              raise AssertionError(f'live seed artifacts not visible: wanted={sorted(targets)}')
+
+          artifacts.sort(key=lambda item: item.get('created_at', ''), reverse=True)
+          newest_by_family = {}
+          for artifact in artifacts:
+              newest_by_family.setdefault(
+                  artifact_family(str(artifact.get('name', ''))), int(artifact['id'])
+              )
+
+          run_cache = {}
+          pr_cache = {}
+          branch_cache = {}
+
+          def run_info(run_id):
+              if run_id not in run_cache:
+                  run_cache[run_id] = request(f'/repos/{repo}/actions/runs/{run_id}', allow_404=True)
+              return run_cache[run_id]
+
+          def pr_info(number):
+              if number not in pr_cache:
+                  pr_cache[number] = request(f'/repos/{repo}/pulls/{number}', allow_404=True)
+              return pr_cache[number]
+
+          def branch_state(branch):
+              if not branch:
+                  return None
+              if branch not in branch_cache:
+                  encoded = urllib.parse.quote(branch, safe='')
+                  branch_cache[branch] = request(
+                      f'/repos/{repo}/branches/{encoded}', allow_404=True
+                  ) is not None
+              return branch_cache[branch]
+
+          decision_counts = collections.Counter()
+          reason_counts = collections.Counter()
+          bytes_by_decision = collections.Counter()
+          target_decisions = {}
+
+          for artifact in artifacts:
+              artifact_id = int(artifact['id'])
+              name = str(artifact.get('name', ''))
+              family = artifact_family(name)
+              size = int(artifact.get('size_in_bytes') or 0)
+              workflow_run = artifact.get('workflow_run') or {}
+              run_id = workflow_run.get('id')
+              run = run_info(run_id) if run_id else None
+              pull_requests = (run or {}).get('pull_requests') or []
+              pr_states = []
+              unresolved_pr = False
+              for ref in pull_requests:
+                  info = pr_info(ref['number'])
+                  if info is None:
+                      unresolved_pr = True
+                      break
+                  pr_states.append(info.get('state'))
+
+              branch_exists = None
+              if run and run.get('conclusion') == 'success' and not pull_requests:
+                  branch = run.get('head_branch')
+                  if branch and branch != default_branch:
+                      branch_exists = branch_state(branch)
+
+              decision, reason = classify_one(
+                  artifact,
+                  newest_id=newest_by_family[family],
+                  run=run,
+                  pr_states=pr_states,
+                  unresolved_pr=unresolved_pr,
+                  branch_exists=branch_exists,
+              )
+              record = {
+                  'decision': decision,
+                  'reason': reason,
+                  'id': artifact_id,
+                  'name': name,
+                  'family': family,
+                  'bytes': size,
+                  'ageDays': round(age_days(artifact), 4),
+                  'runId': run_id,
+                  'runConclusion': run.get('conclusion') if run else None,
+                  'runBranch': run.get('head_branch') if run else None,
+              }
+              print('LIVE_DECISION ' + json.dumps(record, sort_keys=True))
+              decision_counts[decision] += 1
+              reason_counts[f'{decision}:{reason}'] += 1
+              bytes_by_decision[decision] += size
+              if name in targets:
+                  target_decisions[name] = (decision, reason)
+
+          if target_decisions.get(protected_name) != ('KEEP', 'protected-durable-asset'):
+              raise AssertionError(('protected live seed', target_decisions.get(protected_name)))
+          if target_decisions.get(ordinary_name) != ('KEEP', 'run-not-completed'):
+              raise AssertionError(('ordinary live seed', target_decisions.get(ordinary_name)))
+
+          summary = {
+              'repo': repo,
+              'artifactTotal': len(artifacts),
+              'currentRunId': current_run_id,
+              'currentRunSeedCount': len(target_decisions),
+              'decisions': dict(sorted(decision_counts.items())),
+              'bytesByDecision': dict(sorted(bytes_by_decision.items())),
+              'reasons': dict(sorted(reason_counts.items())),
+              'fixtureCases': len(fixture_cases),
+              'mutationAttempted': False,
+              'crossRepositoryEnumeration': False,
+          }
+          print('NONEMPTY_DRY_RUN_SUMMARY ' + json.dumps(summary, sort_keys=True))
+          print('ACTIONS_STORAGE_HYGIENE_NONEMPTY_PASS mutationAttempted=false crossRepositoryEnumeration=false')
+          PY
