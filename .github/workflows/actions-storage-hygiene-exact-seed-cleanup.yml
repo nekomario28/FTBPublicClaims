@@ -1,0 +1,170 @@
+name: Actions Storage Hygiene Exact Seed Cleanup
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    branches: [public-claim-context]
+    paths:
+      - '.github/workflows/actions-storage-hygiene-exact-seed-cleanup.yml'
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: actions-storage-hygiene-exact-seed-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'maintenance/actions-storage-hygiene-exact-seed-cleanup'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CLEANUP_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Delete only reviewed diagnostic seed artifacts and verify absence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+
+          repo = os.environ['REPO']
+          token = os.environ['CLEANUP_TOKEN']
+          api = 'https://api.github.com'
+          headers = {
+              'Authorization': f'Bearer {token}',
+              'Accept': 'application/vnd.github+json',
+              'X-GitHub-Api-Version': '2022-11-28',
+              'User-Agent': 'actions-storage-hygiene-exact-seed-cleanup',
+          }
+
+          reviewed = {
+              9481784987: {
+                  'name': 'release-storage-hygiene-live-seed-32596875373',
+                  'bytes': 224,
+                  'digest': 'sha256:9377e3f586b2f567577944829fce221a776ce0c1aea3664f6a6c7444e235ab1c',
+                  'run': 32596875373,
+              },
+              9481784719: {
+                  'name': 'storage-hygiene-live-seed-32596875373',
+                  'bytes': 213,
+                  'digest': 'sha256:a00ea7acce6f685efc6850e274112315eda32de0255f157fba451db348519354',
+                  'run': 32596875373,
+              },
+              9481784003: {
+                  'name': 'release-storage-hygiene-live-seed-32596873012',
+                  'bytes': 224,
+                  'digest': 'sha256:9e334fa802d1d57270a74fff9f302ebb20051bd4ca315aec917a7622997674ba',
+                  'run': 32596873012,
+              },
+              9481783868: {
+                  'name': 'storage-hygiene-live-seed-32596873012',
+                  'bytes': 213,
+                  'digest': 'sha256:d7df4cb313ab5216429adadd4131467522d2ddce6446309ce442422b7beb96b5',
+                  'run': 32596873012,
+              },
+              9481772713: {
+                  'name': 'release-storage-hygiene-live-seed-32596827212',
+                  'bytes': 224,
+                  'digest': 'sha256:327be7a57b6adc75fc0ff5a4b1ed9a9c03de5cfc1d7c9c390b02a485fc07e3d1',
+                  'run': 32596827212,
+              },
+              9481772555: {
+                  'name': 'storage-hygiene-live-seed-32596827212',
+                  'bytes': 213,
+                  'digest': 'sha256:c26d07e5c9df285e8808eccc7d60adf9e9f76c2f5301c01fc35ce698ff1f613c',
+                  'run': 32596827212,
+              },
+          }
+
+          def request(method, path, *, allow_404=False):
+              req = urllib.request.Request(api + path, headers=headers, method=method)
+              try:
+                  with urllib.request.urlopen(req, timeout=60) as response:
+                      raw = response.read()
+                      if not raw:
+                          return response.status, None
+                      return response.status, json.loads(raw.decode('utf-8'))
+              except urllib.error.HTTPError as exc:
+                  if allow_404 and exc.code == 404:
+                      return 404, None
+                  body = exc.read().decode('utf-8', errors='replace')
+                  raise RuntimeError(f'{method} {path} -> {exc.code}: {body}') from exc
+
+          # Phase 1: resolve and verify the entire reviewed set before any mutation.
+          for artifact_id, expected in reviewed.items():
+              status, artifact = request('GET', f'/repos/{repo}/actions/artifacts/{artifact_id}')
+              assert status == 200
+              actual = {
+                  'name': artifact.get('name'),
+                  'bytes': int(artifact.get('size_in_bytes') or 0),
+                  'digest': artifact.get('digest'),
+                  'run': int((artifact.get('workflow_run') or {}).get('id') or 0),
+              }
+              if actual != expected:
+                  raise AssertionError({
+                      'artifactId': artifact_id,
+                      'expected': expected,
+                      'actual': actual,
+                  })
+              print('REVIEWED_DELETE_CANDIDATE ' + json.dumps({
+                  'artifactId': artifact_id,
+                  'name': expected['name'],
+                  'bytes': expected['bytes'],
+                  'runId': expected['run'],
+                  'reason': 'explicit-diagnostic-seed-exact-id',
+              }, sort_keys=True))
+
+          print(f'PREDELETE_REVIEW_PASS count={len(reviewed)} bytes={sum(x["bytes"] for x in reviewed.values())}')
+
+          # Phase 2: mutate only the exact, fully verified allowlist.
+          deleted = []
+          for artifact_id, expected in reviewed.items():
+              status, _ = request('DELETE', f'/repos/{repo}/actions/artifacts/{artifact_id}')
+              if status != 204:
+                  raise AssertionError((artifact_id, 'delete-status', status))
+              deleted.append(artifact_id)
+              print('DELETE_OK ' + json.dumps({
+                  'artifactId': artifact_id,
+                  'name': expected['name'],
+                  'bytes': expected['bytes'],
+                  'reason': 'explicit-diagnostic-seed-exact-id',
+              }, sort_keys=True))
+
+          # Phase 3: verify each selected id is gone.
+          for artifact_id in deleted:
+              status, _ = request(
+                  'GET', f'/repos/{repo}/actions/artifacts/{artifact_id}', allow_404=True
+              )
+              if status != 404:
+                  raise AssertionError((artifact_id, 'post-delete-get', status))
+
+          # Phase 4: independently re-list every producing run and ensure none of the ids remain.
+          by_run = {}
+          for artifact_id, expected in reviewed.items():
+              by_run.setdefault(expected['run'], set()).add(artifact_id)
+          for run_id, expected_ids in sorted(by_run.items()):
+              status, payload = request(
+                  'GET', f'/repos/{repo}/actions/runs/{run_id}/artifacts?per_page=100'
+              )
+              assert status == 200
+              remaining = {int(item['id']) for item in payload.get('artifacts', [])}
+              overlap = remaining.intersection(expected_ids)
+              if overlap:
+                  raise AssertionError((run_id, 'post-delete-relist-overlap', sorted(overlap)))
+              print(f'POSTDELETE_RUN_RELIST_PASS runId={run_id} selectedRemaining=0')
+
+          freed = sum(item['bytes'] for item in reviewed.values())
+          print(
+              'ACTIONS_STORAGE_HYGIENE_MUTATION_PASS '
+              f'deleted={len(deleted)} freedBytes={freed} '
+              'reason=explicit-diagnostic-seed-exact-id '
+              'postDeleteVerified=true crossRepositoryEnumeration=false'
+          )
+          PY
