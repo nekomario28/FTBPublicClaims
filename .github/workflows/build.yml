@@ -1,0 +1,310 @@
+name: Build
+
+on:
+  pull_request:
+  push:
+    branches:
+      - public-claim-context
+      - neoforge-1.21.1-port
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ftbpublicclaims-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
+          validate-wrappers: true
+
+      - name: Download BuyClaimChunks Continued
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p libs
+          for attempt in 1 2 3 4 5; do
+            rm -f libs/buyclaimchunks-continued-neoforge-1.21.1-1.1.1.jar
+            if gh release download v1.1.1 \
+              --repo nekomario28/BuyClaimChunks \
+              --pattern 'buyclaimchunks-continued-neoforge-1.21.1-1.1.1.jar' \
+              --dir libs; then
+              break
+            fi
+            [[ "$attempt" == 5 ]] && exit 1
+            sleep $((attempt * 5))
+          done
+          test -s libs/buyclaimchunks-continued-neoforge-1.21.1-1.1.1.jar
+
+      - name: Compile and audit distributable JAR
+        run: ./gradlew clean test build --no-daemon --stacktrace
+
+      - name: Verify FTB Chunks client map ABI
+        shell: bash
+        run: |
+          set -euo pipefail
+          jar_path=$(find ~/.gradle/caches -type f -name '*ftb-chunks-neoforge*2101.1.21*.jar' \
+            ! -name '*sources*' ! -name '*javadoc*' | head -1)
+          test -n "$jar_path"
+          javap -classpath "$jar_path" -private \
+            dev.ftb.mods.ftbchunks.client.gui.ChunkScreenPanel | tee ftbchunks-chunkscreen-abi.txt
+          javap -classpath "$jar_path" -private \
+            dev.ftb.mods.ftbchunks.client.gui.ChunkScreen | tee ftbchunks-chunkscreen-accessor-abi.txt
+          grep -Eq 'selectedChunks' ftbchunks-chunkscreen-abi.txt
+          grep -Eq 'getChunkScreen\(' ftbchunks-chunkscreen-accessor-abi.txt
+
+      - name: Exercise FTB Chunks map with real mouse input
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xdotool imagemagick
+
+          rm -rf run run-client
+          mkdir -p run
+          cat > run/eula.txt <<'EOF'
+          eula=true
+          EOF
+          cat > run/server.properties <<'EOF'
+          enable-rcon=true
+          rcon.password=ftbpublicclaims-ui
+          rcon.port=25576
+          online-mode=false
+          server-port=25565
+          spawn-protection=0
+          EOF
+
+          Xvfb :99 -screen 0 1280x720x24 > xvfb.log 2>&1 &
+          xvfb_pid=$!
+          export DISPLAY=:99
+          setsid ./gradlew runServer --no-daemon --console=plain > ui-server.log 2>&1 &
+          server_pid=$!
+          client_pid=''
+
+          cleanup() {
+            [[ -n "$client_pid" ]] && kill -TERM -- "-$client_pid" 2>/dev/null || true
+            kill -TERM -- "-$server_pid" 2>/dev/null || true
+            kill "$xvfb_pid" 2>/dev/null || true
+            wait "$client_pid" 2>/dev/null || true
+            wait "$server_pid" 2>/dev/null || true
+            wait "$xvfb_pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          rcon() {
+            python3 .github/scripts/minecraft_rcon.py 127.0.0.1 25576 ftbpublicclaims-ui "$@"
+          }
+
+          for _ in {1..120}; do
+            grep -Eq 'Done \([0-9.]+s\)!' ui-server.log && break
+            kill -0 "$server_pid" 2>/dev/null || { cat ui-server.log; exit 1; }
+            sleep 2
+          done
+          grep -Eq 'Done \([0-9.]+s\)!' ui-server.log
+          for _ in {1..30}; do
+            rcon list >/dev/null 2>&1 && break
+            sleep 1
+          done
+          rcon list >/dev/null
+
+          setsid ./gradlew runClient -PuiProbe=true --no-daemon --console=plain > client-ui.log 2>&1 &
+          client_pid=$!
+
+          window_id=''
+          for _ in {1..120}; do
+            window_id=$(xdotool search --onlyvisible --name 'Minecraft' 2>/dev/null | head -1 || true)
+            [[ -n "$window_id" ]] && break
+            kill -0 "$client_pid" 2>/dev/null || { cat client-ui.log; exit 1; }
+            sleep 2
+          done
+          test -n "$window_id"
+
+          for _ in {1..150}; do
+            grep -Fq 'FTBPublicClaims UI probe: map-screen-init' client-ui.log && break
+            kill -0 "$client_pid" 2>/dev/null || { cat client-ui.log; exit 1; }
+            sleep 2
+          done
+          grep -Fq 'FTBPublicClaims UI probe: automatic-map-open' client-ui.log
+
+          probe_line=$(grep -F 'FTBPublicClaims UI probe: map-screen-init' client-ui.log | tail -1)
+          value() {
+            local key=$1
+            printf '%s\n' "$probe_line" | sed -n "s/.* ${key}=\([0-9][0-9]*\).*/\1/p"
+          }
+          screen_width=$(value screenWidth)
+          screen_height=$(value screenHeight)
+          button_gui_x=$(value buttonCenterX)
+          button_gui_y=$(value buttonCenterY)
+          test -n "$screen_width"
+          test -n "$screen_height"
+          test -n "$button_gui_x"
+          test "$button_gui_y" = '12'
+
+          eval "$(xdotool getwindowgeometry --shell "$window_id")"
+          button_x=$((button_gui_x * WIDTH / screen_width))
+          button_y=$((button_gui_y * HEIGHT / screen_height))
+          drag_start_x=$(((screen_width / 2 - 30) * WIDTH / screen_width))
+          drag_start_y=$(((screen_height / 2 - 20) * HEIGHT / screen_height))
+          drag_end_x=$(((screen_width / 2 + 30) * WIDTH / screen_width))
+          drag_end_y=$(((screen_height / 2 + 20) * HEIGHT / screen_height))
+
+          xdotool mousemove --window "$window_id" "$button_x" "$button_y" click 1
+          for _ in {1..20}; do
+            grep -Fq 'FTBPublicClaims UI probe: target-cycle public=true' client-ui.log && break
+            sleep 1
+          done
+          grep -Fq 'FTBPublicClaims UI probe: target-cycle public=true' client-ui.log
+
+          xdotool mousemove --window "$window_id" "$drag_start_x" "$drag_start_y" mousedown 1 \
+            mousemove --window "$window_id" "$drag_end_x" "$drag_end_y" sleep 1 mouseup 1
+          for _ in {1..20}; do
+            grep -Eq 'FTBPublicClaims UI probe: public-chunk-packet claim=true chunks=[1-9][0-9]* canceled=true' client-ui.log && break
+            sleep 1
+          done
+          grep -Eq 'FTBPublicClaims UI probe: public-chunk-packet claim=true chunks=[1-9][0-9]* canceled=true' client-ui.log
+          for _ in {1..20}; do
+            claim_status=$(rcon 'publicclaim status')
+            printf '%s\n' "$claim_status" | grep -Fq 'claims=1' && break
+            sleep 1
+          done
+          printf '%s\n' "$claim_status" | grep -Fq 'claims=1'
+
+          xdotool mousemove --window "$window_id" "$drag_start_x" "$drag_start_y" mousedown 3 \
+            mousemove --window "$window_id" "$drag_end_x" "$drag_end_y" sleep 1 mouseup 3
+          for _ in {1..20}; do
+            grep -Eq 'FTBPublicClaims UI probe: public-chunk-packet claim=false chunks=[1-9][0-9]* canceled=true' client-ui.log && break
+            sleep 1
+          done
+          grep -Eq 'FTBPublicClaims UI probe: public-chunk-packet claim=false chunks=[1-9][0-9]* canceled=true' client-ui.log
+          for _ in {1..20}; do
+            unclaim_status=$(rcon 'publicclaim status')
+            printf '%s\n' "$unclaim_status" | grep -Fq 'claims=0' && break
+            sleep 1
+          done
+          printf '%s\n' "$unclaim_status" | grep -Fq 'claims=0'
+
+          import -display :99 -window "$window_id" client-map-probe.png
+          grep -Fq 'Dev joined the game' ui-server.log
+          ! grep -Eq 'Could not read FTB Chunks map selection|FTB Chunks 2101 map integration is unavailable' client-ui.log
+
+      - name: Run combined NeoForge GameTests
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew runGameTestServer --no-daemon --console=plain 2>&1 | tee gametest.log
+          grep -Fq 'FTB Chunks 2101.1.21' gametest.log
+          grep -Fq 'FTB Teams 2101.1.10' gametest.log
+          grep -Fq 'FTB Library 2101.1.34' gametest.log
+          grep -Eq 'All 9 required tests passed' gametest.log
+
+      - name: Verify combined dedicated-server persistence
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf run
+          mkdir -p run
+          cat > run/eula.txt <<'EOF'
+          eula=true
+          EOF
+          cat > run/server.properties <<'EOF'
+          enable-rcon=true
+          rcon.password=ftbpublicclaims-ci
+          rcon.port=25575
+          online-mode=false
+          server-port=25565
+          EOF
+
+          server_pid=''
+          cleanup() {
+            [[ -n "$server_pid" ]] && kill -TERM -- "-$server_pid" 2>/dev/null || true
+            [[ -n "$server_pid" ]] && wait "$server_pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          rcon() {
+            python3 .github/scripts/minecraft_rcon.py 127.0.0.1 25575 ftbpublicclaims-ci "$@"
+          }
+
+          start_server() {
+            local log_file=$1
+            setsid ./gradlew runServer --no-daemon --console=plain > "$log_file" 2>&1 &
+            server_pid=$!
+            for _ in {1..120}; do
+              if grep -Eq 'Done \([0-9.]+s\)!' "$log_file"; then
+                grep -Fq 'BuyClaimChunks Continued' "$log_file"
+                grep -Fq 'FTB Public Claims' "$log_file"
+                for _ in {1..30}; do
+                  rcon list >/dev/null 2>&1 && return 0
+                  sleep 1
+                done
+              fi
+              kill -0 "$server_pid" 2>/dev/null || { cat "$log_file"; exit 1; }
+              sleep 2
+            done
+            cat "$log_file"
+            exit 1
+          }
+
+          stop_server() {
+            rcon 'save-all flush' >/dev/null
+            rcon stop >/dev/null || true
+            wait "$server_pid"
+            server_pid=''
+          }
+
+          start_server server-persistence-first.log
+          rcon 'publicclaim settings pvp false' >/dev/null
+          rcon 'publicclaim settings explosions true' >/dev/null
+          rcon 'publicclaim settings mob_griefing true' >/dev/null
+          rcon 'publicclaim internal add_extra 7 100' >/dev/null
+          rcon 'publicclaim internal claim_chunk 0 0' >/dev/null
+          first_status=$(rcon 'publicclaim status')
+          printf '%s\n' "$first_status" | grep -Fq 'pvp=false explosions=true mob_griefing=true extra=7 claims=1'
+          stop_server
+
+          start_server server-persistence-second.log
+          second_status=$(rcon 'publicclaim status')
+          printf '%s\n' "$second_status" | grep -Fq 'pvp=false explosions=true mob_griefing=true extra=7 claims=1'
+          stop_server
+          test "$first_status" = "$second_status"
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ftbpublicclaims-build-${{ github.sha }}
+          path: |
+            build/libs/*.jar
+            build/reports/tests/test/
+            ftbchunks-chunkscreen-abi.txt
+            ftbchunks-chunkscreen-accessor-abi.txt
+            client-ui.log
+            ui-server.log
+            xvfb.log
+            client-map-probe.png
+            run/logs/latest.log
+            run/crash-reports/
+            gametest.log
+            server-persistence-first.log
+            server-persistence-second.log
+          if-no-files-found: warn
+          retention-days: 14

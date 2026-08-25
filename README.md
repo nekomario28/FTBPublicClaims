@@ -1,53 +1,97 @@
-# FTBPublicClaims
+# FTB Public Claims
 
-Minecraft Forge 1.20.1 / FTB Chunks向けの独立アドオンです。一般プレイヤーがOP権限なしで、通常の個人／パーティーclaimとは別の公共保護領域を作成・管理できます。
+Minecraft 1.21.1／NeoForge向けのFTB Chunksアドオンです。サーバー全体で1つの公共claim領域を提供し、通常の個人／パーティーclaimとは別の所有先と容量で管理します。
 
-## 公共claim
+## 仕組み
 
-公共プロジェクトごとにFTB TeamsのServer Teamを作り、そのチームへFTB Chunksのclaimを所属させます。通常の個人／パーティーclaimとは所有先が分かれます。
+`Global Public Claims`というFTB TeamsのServer Teamを、公共claimの保存先・所有者IDとして使用します。このチームへの加入状況はアクセス境界ではありません。
 
-- 所有者と管理者: ブロック編集・設備操作が可能
-- 一般プレイヤー: チェストやドアなどの操作が可能、設置・破壊は不可
-- 爆発、mob grief、fake playerによるブロック編集、PvP: 無効
-- FTB Chunksのマップ上部にclaim先切替ボタンを追加
-- 公共モードでは左クリックでclaim、右クリックでunclaim
+**ワールド参加者全員が、公共領域の対等な利用者です。**
+
+- 誰でも公共チャンクをclaim／unclaim可能
+- 誰でも公共領域内のブロック編集、コンテナ・Entity操作が可能
+- 公共チャンク同士を隣接させる必要はなく、離れた場所にもclaim可能
+- FTB Chunksマップ上部の`対象: 個人`／`対象: 公共`ボタンでclaim先を切替
+- 公共モードでは左ドラッグでclaim、右ドラッグでunclaim
 - 公共claimの強制ロードは不可
+- 既存の個人／パーティーclaimを上書きしない
+- 公共容量は個人／パーティー容量から独立
 
-この機能はクライアントUIと独自通信を含むため、MODをサーバーとクライアントの両方へ導入する必要があります。
+初期設定では、公共領域内のPvPは有効、爆発による地形破壊とmob griefingは無効です。fake playerによる編集も初期状態では許可しません。
+
+クライアントUIと独自Payloadを含むため、MODをサーバーとクライアントの両方へ導入してください。
 
 ## コマンド
 
-すべて一般プレイヤーが実行できます。
+次のコマンドは一般プレイヤーも実行できます。
 
 ```text
-/publicclaim create <name>
-/publicclaim list
 /publicclaim select personal
-/publicclaim select <project>
-/publicclaim manager <project> add <online-player>
-/publicclaim manager <project> remove <online-player>
-/publicclaim delete <project> confirm
+/publicclaim select public
+/publicclaim status
+/publicclaim settings pvp <true|false>
+/publicclaim settings explosions <true|false>
+/publicclaim settings mob_griefing <true|false>
 ```
 
-プロジェクト名は3～24文字の英数字、`_`、`-`を使用できます。作成するとそのプロジェクトがclaim先として自動選択されます。
+`settings`は公共領域全体の設定を変更します。公共領域は全参加者の共有物であるため、特定の所有者・管理者は設けていません。
 
-## 荒らし対策の初期値
+## 設定
 
 `config/ftbpublicclaims-common.toml`の`publicClaims`で調整できます。
 
-- 1プレイヤーにつき1プロジェクト
-- 1プロジェクト64チャンク
-- プレイヤーから16チャンク以内の操作のみ
-- 2チャンク目以降は既存領域への上下左右の隣接が必要
-- 1パケットで最大64変更
-- 既存claimの上書きや変換は不可（未claimチャンクのみ）
+```toml
+[publicClaims]
+enabled = true
+maxChunksPerProject = 64
+maxClaimDistance = 16
+```
 
-## 対応バージョンと参照ソース
+- `enabled`: サーバー共通の公共領域を有効化
+- `maxChunksPerProject`: 公共領域の基本チャンク上限。旧開発設定との互換性のためキー名を維持
+- `maxClaimDistance`: マップ操作を許可するプレイヤーからの最大チャンク距離
 
-- Minecraft 1.20.1 / Forge 47.4.13
-- [FTB Chunks v2001.3.6](https://github.com/FTBTeam/FTB-Chunks/tree/v2001.3.6)
-- [FTB Teams v2001.3.1](https://github.com/FTBTeam/FTB-Teams/tree/v2001.3.1)
-- [FTB Library v2001.2.12](https://github.com/FTBTeam/FTB-Library/tree/v2001.2.12)
-- [Architectury API 9.1.12](https://github.com/architectury/architectury-api)
+公共claimの配置に隣接条件はありません。旧版のconfigに`requireAdjacency`が残っていても、現在の実装では使用されません。追加の公共容量は全ディメンション共通の基本上限へ加算されます。1つのPayloadで処理する変更数は最大64チャンクです。
 
-FTB Teams 2001.3.1はServer Team作成を公開APIに含めていないため、そのバージョン固有処理は`FTBServerTeamBridge`へ隔離しています。内部実装とprivateフィールドを利用するため、`mods.toml`では検証済みバージョンに固定しています。
+## BuyClaimChunks Continuedとの併用
+
+BuyClaimChunks Continuedの`/buyclaim`は、プレイヤー個人の追加claim容量だけを増やします。
+
+FTB Public Claimsは別のServer Teamへ公共容量と公共claimを保存するため、次は相互に影響しません。
+
+- `/buyclaim`で購入した個人容量
+- 公共領域の追加容量
+- 個人／パーティーのclaim数
+- 公共領域のclaim数
+
+CIではBuyClaimChunks Continued 1.1.1を同時ロードし、実際のダイヤ支払いと容量分離を検証しています。
+
+## 対応バージョン
+
+- Minecraft 1.21.1
+- NeoForge 21.1.242（21.1系）
+- Java 21
+- FTB Chunks 2101.1.20以上、2102未満
+- 検証構成: FTB Chunks 2101.1.21／FTB Teams 2101.1.10／FTB Library 2101.1.34／Architectury API 13.0.8
+
+FTB Teams／FTB Chunksのバージョン依存処理は`FTBServerTeamBridge`とクライアント統合部へ隔離しています。CIでは使用するFTB Chunks JARのクライアントABIも検査します。
+
+## 検証
+
+GitHub Actionsでは次を自動検証します。
+
+- Java 21でのclean buildと配布JAR監査
+- BuyClaimChunks Continuedとの同時ロードと実購入
+- 離れた公共チャンクを同じ公共領域としてclaim可能
+- 異なる参加者による公共claim／unclaim
+- 全参加者のブロック編集・コンテナ操作権限
+- Xvfb上の実NeoForgeクライアントと実マウス入力
+- Personal／Public切替、左ドラッグclaim、右ドラッグunclaim
+- RCONによるサーバー側claim数の`0 → 1 → 0`確認
+- 通常停止後の別JVM再起動によるチームUUID、設定、容量、claimの復元
+
+## 開発セーブの移行境界
+
+以前の未公開開発版には、複数の公共プロジェクトを作成するモデルがありました。現在の設計はサーバー全体で1つの公共領域です。
+
+旧開発セーブを開いた場合は、保存順で最初のプロジェクト／Server Teamを公共領域として維持します。複数の旧チームとclaimを自動統合すると所有競合や意図しない上書きを起こし得るため、自動マージは行いません。新規ワールドと単一公共領域のセーブ形式は自動試験の対象です。

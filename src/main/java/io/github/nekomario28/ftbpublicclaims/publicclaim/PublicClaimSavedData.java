@@ -1,13 +1,16 @@
 package io.github.nekomario28.ftbpublicclaims.publicclaim;
 
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import dev.ftb.mods.ftbteams.data.ServerTeam;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.util.datafix.DataFixTypes;
 import net.minecraft.world.level.saveddata.SavedData;
 
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -16,19 +19,23 @@ import java.util.UUID;
 
 public final class PublicClaimSavedData extends SavedData {
     private static final String DATA_NAME = "ftbpublicclaims_public_claims";
+    private static final int CURRENT_SCHEMA = 2;
+    private static final Factory<PublicClaimSavedData> FACTORY = new Factory<>(
+            PublicClaimSavedData::new,
+            PublicClaimSavedData::load,
+            DataFixTypes.SAVED_DATA_COMMAND_STORAGE
+    );
 
     private final Map<UUID, PublicClaimProject> projects = new LinkedHashMap<>();
+    private int schemaVersion;
 
     public static PublicClaimSavedData get(MinecraftServer server) {
-        return server.overworld().getDataStorage().computeIfAbsent(
-                PublicClaimSavedData::load,
-                PublicClaimSavedData::new,
-                DATA_NAME
-        );
+        return server.overworld().getDataStorage().computeIfAbsent(FACTORY, DATA_NAME);
     }
 
-    public static PublicClaimSavedData load(CompoundTag tag) {
+    public static PublicClaimSavedData load(CompoundTag tag, HolderLookup.Provider registries) {
         PublicClaimSavedData data = new PublicClaimSavedData();
+        data.schemaVersion = tag.getInt("schemaVersion");
         ListTag projectTags = tag.getList("projects", Tag.TAG_COMPOUND);
         for (int i = 0; i < projectTags.size(); i++) {
             PublicClaimProject project = PublicClaimProject.load(projectTags.getCompound(i));
@@ -38,50 +45,48 @@ public final class PublicClaimSavedData extends SavedData {
     }
 
     @Override
-    public CompoundTag save(CompoundTag tag) {
+    public CompoundTag save(CompoundTag tag, HolderLookup.Provider registries) {
+        tag.putInt("schemaVersion", schemaVersion);
         ListTag projectTags = new ListTag();
-        projects.values().forEach(project -> projectTags.add(project.save()));
+        projects.values().stream().findFirst().ifPresent(project -> projectTags.add(project.save()));
         tag.put("projects", projectTags);
         return tag;
     }
 
-    public Optional<PublicClaimProject> find(UUID id) {
-        return Optional.ofNullable(projects.get(id));
-    }
-
-    public Optional<PublicClaimProject> findByName(String name) {
-        return projects.values().stream().filter(project -> project.name().equalsIgnoreCase(name)).findFirst();
-    }
-
-    public List<PublicClaimProject> manageableBy(UUID playerId) {
-        List<PublicClaimProject> result = new ArrayList<>();
-        for (PublicClaimProject project : projects.values()) {
-            if (project.canManage(playerId)) {
-                result.add(project);
+    public PublicClaimProject getOrCreateGlobal(CommandSourceStack source) throws CommandSyntaxException {
+        PublicClaimProject existing = projects.values().stream().findFirst().orElse(null);
+        if (existing != null) {
+            boolean schemaUpgrade = schemaVersion < CURRENT_SCHEMA;
+            boolean extraLegacyProjects = projects.size() > 1;
+            if (schemaUpgrade) {
+                FTBServerTeamBridge.find(existing.teamId()).ifPresent(FTBServerTeamBridge::applySharedProperties);
             }
+            if (schemaUpgrade || extraLegacyProjects) {
+                schemaVersion = CURRENT_SCHEMA;
+                projects.clear();
+                projects.put(existing.id(), existing);
+                setDirty();
+            }
+            return existing;
         }
-        result.sort(Comparator.comparing(PublicClaimProject::name, String.CASE_INSENSITIVE_ORDER));
-        return result;
-    }
 
-    public long countOwnedBy(UUID playerId) {
-        return projects.values().stream().filter(project -> project.isOwner(playerId)).count();
-    }
-
-    public void add(PublicClaimProject project) {
+        ServerTeam team = FTBServerTeamBridge.createShared(source);
+        PublicClaimProject project = PublicClaimProject.create(team.getId());
         projects.put(project.id(), project);
+        schemaVersion = CURRENT_SCHEMA;
         setDirty();
+        return project;
     }
 
-    public boolean remove(UUID id) {
-        if (projects.remove(id) != null) {
-            setDirty();
-            return true;
-        }
-        return false;
+    public Optional<PublicClaimProject> global() {
+        return projects.values().stream().findFirst();
     }
 
-    public void changed() {
-        setDirty();
+    public Optional<PublicClaimProject> find(UUID id) {
+        return global().filter(project -> project.id().equals(id));
+    }
+
+    public List<PublicClaimProject> projectsForClient() {
+        return global().map(List::of).orElseGet(List::of);
     }
 }

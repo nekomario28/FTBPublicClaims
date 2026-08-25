@@ -1,36 +1,46 @@
 package io.github.nekomario28.ftbpublicclaims.network.packet;
 
+import io.github.nekomario28.ftbpublicclaims.FTBPublicClaims;
 import io.github.nekomario28.ftbpublicclaims.publicclaim.PublicClaimSavedData;
 import io.github.nekomario28.ftbpublicclaims.publicclaim.PublicClaimService;
-import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.ChunkPos;
-import net.minecraftforge.network.NetworkEvent;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
-import java.util.LinkedHashSet;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.UUID;
-import java.util.function.Supplier;
 
-public record PublicChunkChangePacket(UUID projectId, boolean claim, Set<ChunkPos> chunks) {
+public record PublicChunkChangePacket(UUID projectId, boolean claim, Set<ChunkPos> chunks)
+        implements CustomPacketPayload {
+    public static final Type<PublicChunkChangePacket> TYPE = new Type<>(
+            ResourceLocation.fromNamespaceAndPath(FTBPublicClaims.MOD_ID, "public_chunk_change")
+    );
+    public static final StreamCodec<RegistryFriendlyByteBuf, PublicChunkChangePacket> STREAM_CODEC =
+            StreamCodec.ofMember(PublicChunkChangePacket::encode, PublicChunkChangePacket::decode);
+
     public PublicChunkChangePacket {
         LinkedHashSet<ChunkPos> limited = new LinkedHashSet<>();
         chunks.stream().limit(PublicClaimService.MAX_CHANGES_PER_PACKET).forEach(limited::add);
         chunks = Collections.unmodifiableSet(limited);
     }
 
-    public static void encode(PublicChunkChangePacket packet, FriendlyByteBuf buffer) {
-        buffer.writeUUID(packet.projectId);
-        buffer.writeBoolean(packet.claim);
-        buffer.writeVarInt(packet.chunks.size());
-        packet.chunks.forEach(pos -> {
+    private void encode(RegistryFriendlyByteBuf buffer) {
+        buffer.writeUUID(projectId);
+        buffer.writeBoolean(claim);
+        buffer.writeVarInt(chunks.size());
+        chunks.forEach(pos -> {
             buffer.writeVarInt(pos.x);
             buffer.writeVarInt(pos.z);
         });
     }
 
-    public static PublicChunkChangePacket decode(FriendlyByteBuf buffer) {
+    private static PublicChunkChangePacket decode(RegistryFriendlyByteBuf buffer) {
         UUID projectId = buffer.readUUID();
         boolean claim = buffer.readBoolean();
         int size = buffer.readVarInt();
@@ -44,16 +54,21 @@ public record PublicChunkChangePacket(UUID projectId, boolean claim, Set<ChunkPo
         return new PublicChunkChangePacket(projectId, claim, chunks);
     }
 
-    public static void handle(PublicChunkChangePacket packet, Supplier<NetworkEvent.Context> contextSupplier) {
-        NetworkEvent.Context context = contextSupplier.get();
+    public static void handle(PublicChunkChangePacket packet, IPayloadContext context) {
         context.enqueueWork(() -> {
-            ServerPlayer player = context.getSender();
-            if (player == null || packet.chunks.isEmpty()) {
+            if (!(context.player() instanceof ServerPlayer player) || packet.chunks.isEmpty()) {
                 return;
             }
-            PublicClaimSavedData.get(player.server).find(packet.projectId)
+            PublicClaimSavedData.get(player.getServer()).find(packet.projectId)
                     .ifPresent(project -> PublicClaimService.changeChunks(player, project, packet.claim, packet.chunks));
+        }).exceptionally(error -> {
+            FTBPublicClaims.LOGGER.error("Failed to process public chunk change payload", error);
+            return null;
         });
-        context.setPacketHandled(true);
+    }
+
+    @Override
+    public Type<? extends CustomPacketPayload> type() {
+        return TYPE;
     }
 }

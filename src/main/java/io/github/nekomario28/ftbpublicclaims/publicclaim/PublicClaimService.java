@@ -13,10 +13,8 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.ChunkPos;
 
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -30,10 +28,6 @@ public final class PublicClaimService {
     public static void changeChunks(ServerPlayer player, PublicClaimProject project, boolean claim, Set<ChunkPos> requested) {
         if (!Config.publicClaimsEnabled()) {
             player.sendSystemMessage(Component.translatable("ftbpublicclaims.public.disabled").withStyle(ChatFormatting.RED));
-            return;
-        }
-        if (!project.canManage(player.getUUID())) {
-            player.sendSystemMessage(Component.translatable("ftbpublicclaims.public.not_manager").withStyle(ChatFormatting.RED));
             return;
         }
 
@@ -68,44 +62,35 @@ public final class PublicClaimService {
     }
 
     private static ChangeSummary claimChunks(ServerPlayer player, ChunkTeamData teamData, List<ChunkPos> positions) {
-        Set<ChunkPos> pending = new LinkedHashSet<>(positions);
         Map<String, Integer> problems = new HashMap<>();
         int changed = 0;
-        long maxChunks = (long) Config.getMaxPublicChunksPerProject() + teamData.getExtraClaimChunks();
+
+        // FTB Chunks exempts server teams from its normal claim-power limit,
+        // so the shared public realm enforces its own cap before claiming.
+        long maxChunks = (long) Config.getMaxPublicChunks() + teamData.getExtraClaimChunks();
         int existing = teamData.getClaimedChunks().size();
 
-        while (!pending.isEmpty() && existing + changed < maxChunks) {
-            boolean progressed = false;
-            for (ChunkPos pos : new ArrayList<>(pending)) {
-                String validation = validateClaim(player, teamData, pos, existing + changed == 0);
-                if ("wait_for_adjacent".equals(validation)) {
-                    continue;
-                }
-                pending.remove(pos);
-                progressed = true;
-
-                if (validation != null) {
-                    addProblem(problems, validation);
-                    continue;
-                }
-
-                ChunkDimPos dimPos = new ChunkDimPos(player.level().dimension(), pos);
-                ClaimResult result = teamData.claim(player.createCommandSourceStack(), dimPos, false);
-                if (result.isSuccess()) {
-                    changed++;
-                } else {
-                    addProblem(problems, result.getResultId());
-                }
+        for (ChunkPos pos : positions) {
+            if (existing + changed >= maxChunks) {
+                addProblem(problems, "realm_limit");
+                continue;
             }
-            if (!progressed) {
-                pending.forEach(pos -> addProblem(problems, "not_adjacent"));
-                pending.clear();
+
+            String validation = validateClaim(player, pos);
+            if (validation != null) {
+                addProblem(problems, validation);
+                continue;
+            }
+
+            ChunkDimPos dimPos = new ChunkDimPos(player.level().dimension(), pos);
+            ClaimResult result = teamData.claim(player.createCommandSourceStack(), dimPos, false);
+            if (result.isSuccess()) {
+                changed++;
+            } else {
+                addProblem(problems, result.getResultId());
             }
         }
 
-        if (!pending.isEmpty()) {
-            pending.forEach(pos -> addProblem(problems, "project_limit"));
-        }
         return new ChangeSummary(changed, problems);
     }
 
@@ -120,10 +105,10 @@ public final class PublicClaimService {
             ChunkDimPos dimPos = new ChunkDimPos(player.level().dimension(), pos);
             ClaimedChunk chunk = FTBChunksAPI.api().getManager().getChunk(dimPos);
             if (chunk == null || !chunk.getTeamData().getTeam().getTeamId().equals(teamData.getTeam().getTeamId())) {
-                addProblem(problems, "not_project_claim");
+                addProblem(problems, "not_public_claim");
                 continue;
             }
-            ClaimResult result = teamData.unclaim(player.createCommandSourceStack(), dimPos, false);
+            ClaimResult result = teamData.unclaim(player.createCommandSourceStack(), dimPos, false, false);
             if (result.isSuccess()) {
                 changed++;
             } else {
@@ -133,7 +118,7 @@ public final class PublicClaimService {
         return new ChangeSummary(changed, problems);
     }
 
-    private static String validateClaim(ServerPlayer player, ChunkTeamData teamData, ChunkPos pos, boolean firstClaim) {
+    private static String validateClaim(ServerPlayer player, ChunkPos pos) {
         if (!withinRange(player, pos)) {
             return "too_far";
         }
@@ -142,22 +127,7 @@ public final class PublicClaimService {
         if (manager.getChunk(new ChunkDimPos(player.level().dimension(), pos)) != null) {
             return "already_claimed";
         }
-
-        if (Config.requirePublicClaimAdjacency() && !firstClaim && !touchesProjectClaim(teamData, player, pos)) {
-            return "wait_for_adjacent";
-        }
         return null;
-    }
-
-    private static boolean touchesProjectClaim(ChunkTeamData teamData, ServerPlayer player, ChunkPos pos) {
-        for (ClaimedChunk chunk : teamData.getClaimedChunks()) {
-            ChunkDimPos claimedPos = chunk.getPos();
-            if (claimedPos.dimension().equals(player.level().dimension())
-                    && Math.abs(claimedPos.x() - pos.x) + Math.abs(claimedPos.z() - pos.z) == 1) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private static boolean withinRange(ServerPlayer player, ChunkPos pos) {

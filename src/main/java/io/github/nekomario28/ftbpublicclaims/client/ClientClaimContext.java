@@ -48,9 +48,9 @@ public final class ClientClaimContext {
     }
 
     public static Component buttonLabel() {
-        return selectedProject()
-                .<Component>map(project -> Component.translatable("ftbpublicclaims.public.target_project", project.name()))
-                .orElseGet(() -> Component.translatable("ftbpublicclaims.public.target_personal"));
+        return selectedProject().isPresent()
+                ? Component.translatable("ftbpublicclaims.public.target_public")
+                : Component.translatable("ftbpublicclaims.public.target_personal_short");
     }
 
     private static Optional<ProjectSyncPacket.ProjectSummary> find(UUID id) {

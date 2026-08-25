@@ -1,6 +1,8 @@
 .gradle/
 build/
+libs/
 run/
+run-client/
 run-data/
 out/
 *.log
